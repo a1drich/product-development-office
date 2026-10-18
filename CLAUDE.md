@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Design stage. `README.md` is the spec. `docs/SETUP.md` covers setting up the office machine, the conventions target repos are expected to follow, and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo. There is no code, build, lint or test setup yet. Add those commands here once they exist. Don't assume any.
 
+Follow the documentation rules in `AGENTS.md`: docs change in the same commit as the behavior, and `./scripts/check-docs.sh` must pass before committing.
+
 ## What this project is
 
 A Python orchestrator that runs an agent swarm on a **target** GitHub repo. That repo is a separate project, cloned into a local `workspace/` that this repo doesn't track. The swarm acts as a product development office with five roles: PM, Designer, Engineer, Reviewer and Tester. It loops until every open issue is done or waiting on a human. This repo is the office. Don't confuse its code with the target repo's code.

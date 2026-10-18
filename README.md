@@ -28,6 +28,7 @@ It expects these repo conventions:
 | [docs/SETUP.md](docs/SETUP.md) | Installing the office, preparing a target repo, deploying to Hetzner behind Traefik |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | Step-by-step checklist for onboarding an existing repo |
 | [CLAUDE.md](CLAUDE.md) | Guidance for Claude Code when working on this repo |
+| [AGENTS.md](AGENTS.md) | Rules for any agent working on this repo, including how to keep the docs from drifting |
 | [LICENSE](LICENSE) | MIT |
 
 ## Core principles
