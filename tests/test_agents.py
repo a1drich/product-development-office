@@ -49,7 +49,7 @@ def test_prompts_render_without_leftover_placeholders(role):
     values = {k: "X" for k in
               ["repo", "number", "title", "body", "comments", "verify", "branch", "base", "pr",
                "pr_context", "findings", "open_practices", "max_new", "shoot",
-               "docs_build", "open_issues"]}
+               "docs_build", "open_issues", "db_prefix"]}
     text = render(role, values)
     assert "{{" not in text
     assert '"outcome"' in text  # the shared verdict instructions are included

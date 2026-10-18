@@ -69,7 +69,7 @@ Only one office can run per repo. `office start` refuses if another is already r
 | `office shoot --base-url URL` | Run in a target repo with its app running: screenshots every page in `docs/manual/pages.json` at desktop and mobile width, and reports UX problems |
 | `office stop [repo] [--now] [--no-wait]` | Stops a running office once its agents finish their step, or immediately with `--now` |
 | `office plan [repo]` | Shows every open issue's status, priority and what happens next, in the order the office would take them. Read-only, so it's safe to run while the office is running. |
-| `office clean [repo] [--github] [--yes]` | Removes a project's local folders and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
+| `office clean [repo] [--github] [--yes]` | Removes a project's local folders and the throwaway databases its agents created, and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 

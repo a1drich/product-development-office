@@ -18,6 +18,7 @@ How the office is built: its modules, how they fit together, the rules it enforc
 | `office/shoot.py` | `office shoot`: Playwright screenshots and UX checks |
 | `office/docs_server.py` | Keeps the target's MkDocs site served and current while the office runs |
 | `office/plan.py` | `office plan`: a read-only view of what happens next |
+| `office/databases.py` | Finds the target's Postgres from its compose file, and drops the throwaway databases agents create |
 | `office/clean.py` | `office clean`: removes a project's local state and, optionally, the office's traces on GitHub |
 | `office/config.py` | Settings and their defaults; overrides live in `.office/config.json` |
 
@@ -29,6 +30,7 @@ How the office is built: its modules, how they fit together, the rules it enforc
 - **Reviews are PR comments.** The office runs under your GitHub account, which can't approve its own PRs. The reviewer posts its findings as a PR comment, and its verdict decides whether the issue moves on.
 - **Stopping.** Every command the office runs, agents included, gets its own process group, so a terminal Ctrl-C reaches only the office. It decides what to do: the first Ctrl-C (SIGINT) drains, and a second one or SIGTERM ends every tracked command group and exits. The office writes `workspace/<owner>__<repo>.pid` while it runs, which `office stop` signals and a second `office start` refuses to override.
 - **Cleanup.** When an agent finishes in an issue's worktree, the office stops anything it left running there, such as a dev server. The shared main clone is never cleaned, because other agents may be working in it.
+- **Databases.** Each issue owns a database name prefix, `office_<repo hash>_i<N>_`, which agents get in their prompt and in `OFFICE_DB_PREFIX`. They name every database they create with it, through the target's own overrides (such as a test-database name or database URL variable). After every engineer, reviewer or tester run, even a failed one, the office drops every database with that prefix. Only one agent works on an issue at a time, and the repo hash keeps two targets on one Postgres server apart, so a prefix never belongs to another run. `office start` also sweeps up any of this repo's `office_` databases left by a crash, and `office clean` drops them all. The office finds Postgres through the target's compose file (the service running a `postgres` image, its published port and credentials), connects from the host, and never drops a name outside `office_`. A target without a compose Postgres gets no database cleanup.
 - **Dependencies.** An agent that can't continue until another issue lands returns `waiting` with the issue numbers. That isn't a human decision, so the office parks the issue with `office:waiting` and requeues it when those issues close.
 - **Usage limits.** When an agent reports a usage limit, its role pauses for `rate_limit_pause_minutes` and the other roles keep working.
 

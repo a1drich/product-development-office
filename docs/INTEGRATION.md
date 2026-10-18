@@ -101,7 +101,7 @@ The engineers and testers run everything on your machine, in parallel, without y
 - **Env defaults:** `.env.example` works as-is for local development. Add a `make env` target that copies it to `.env` without overwriting an existing one.
 - **Mocked external services:** put each one (payments, OAuth, messaging) behind a flag such as `PAYMENTS_MOCK=true`, so the whole product runs end to end offline.
 - **Demo data:** a `seed_demo` management command (`make seed`) creates realistic data, so the tester can exercise real flows.
-- **Separate test database:** tests use their own database, and its name can be overridden per run, for example `TEST_DB_NAME=myapp_test_agent2`. Several agents running the suite at once must not share one.
+- **Separate test database:** tests use their own database, and its name can be overridden per run, for example `TEST_DB_NAME=myapp_test_agent2`. Several agents running the suite at once must not share one. Make every database name overridable the same way (dev, test and end-to-end): agents name the databases they create with a prefix the office gives them, and the office drops those databases after each run. Databases it can't name that way are left behind.
 - **Configurable ports:** dev server ports can be set from env vars, so two worktrees can run at the same time.
 
 To check: clone the repo into a new folder, then run `make env install up migrate seed verify`. It should pass with no manual steps.

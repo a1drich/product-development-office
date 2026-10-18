@@ -114,7 +114,7 @@ def make_office(tmp_path, monkeypatch):
         office = orchestrator.Office(Config(), gh, FakeWorkspace(tmp_path))
         queue = list(verdicts)
 
-        def fake_run_agent(role, prompt, cwd, cfg, exclusive=False):
+        def fake_run_agent(role, prompt, cwd, cfg, exclusive=False, env=None):
             item = queue.pop(0)
             if isinstance(item, AgentResult):
                 return item
@@ -413,6 +413,42 @@ def test_dry_run_without_a_status_issue_plans_without_touching_github(make_offic
     assert list(gh.issues) == [1]
 
 
+class FakeDatabases:
+    def __init__(self):
+        self.dropped = []
+
+    def drop(self, prefix=None):
+        self.dropped.append(prefix)
+        return []
+
+
+@pytest.mark.parametrize("crash", [False, True])
+def test_worktree_agents_get_a_prefix_and_their_databases_are_dropped(make_office, monkeypatch,
+                                                                      crash):
+    office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
+    office.dbs = FakeDatabases()
+    seen = {}
+
+    def engineer(role, prompt, cwd, cfg, exclusive=False, env=None):
+        seen.update(env or {})
+        if crash:
+            raise RuntimeError("agent crashed")
+        return AgentResult(role, Verdict("failed", "nope"), "")
+
+    monkeypatch.setattr(orchestrator, "run_agent", engineer)
+    office.safely(Task("implement", 1), office.execute)
+    prefix = orchestrator.databases.prefix_for("acme/app", 1)
+    assert seen["OFFICE_DB_PREFIX"] == prefix
+    assert office.dbs.dropped == [prefix]
+
+
+def test_start_sweeps_databases_left_by_earlier_runs(make_office):
+    office, gh = make_office([], [])
+    office.dbs = FakeDatabases()
+    office.sweep_databases()
+    assert office.dbs.dropped == [None]  # None: everything the office made for this repo
+
+
 def test_runs_interrupted_by_shutdown_are_not_failures(make_office):
     office, gh = make_office([Issue(1, "x", "", {L.DESIGN})],
                              [AgentResult("designer", None, "", error="interrupted")])
@@ -437,7 +473,7 @@ def test_conflict_appearing_during_testing_goes_back_without_a_failure(make_offi
     office, gh = make_office([Issue(1, "x", "", {L.TESTING})], [])
     gh.prs[1] = {"number": 5}
 
-    def tester(role, prompt, cwd, cfg, exclusive=False):
+    def tester(role, prompt, cwd, cfg, exclusive=False, env=None):
         gh.conflicting.add(5)  # another PR merged while this one was tested
         return AgentResult(role, Verdict("pass", "all good"), "")
 
@@ -473,7 +509,7 @@ def run_with_signals(office, gh, signals, agent_seconds):
 
     from office import shell
 
-    def agent(role, prompt, cwd, cfg, exclusive=False):
+    def agent(role, prompt, cwd, cfg, exclusive=False, env=None):
         res = shell.run(["sleep", str(agent_seconds)], check=False)
         gh.prs[1] = {"number": 5}
         if res.ok:

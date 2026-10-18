@@ -209,6 +209,11 @@ def cmd_clean(args: argparse.Namespace, cfg: Config) -> int:
             clean.clean_github(gh, plan)
             print("✓ GitHub cleaned")
 
+    if ws.clone.exists():  # the clone's compose file says where Postgres is
+        from office.databases import Databases
+
+        for name in Databases(ws.clone, repo).drop():
+            print(f"✓ dropped database {name}")
     removed = clean.clean_local(ws, cfg)
     for r in removed:
         print(f"✓ removed {r}")

@@ -29,6 +29,7 @@ Never run `office start` without `--dry-run` against a repo the owner hasn't ask
 - `office/orchestrator.py` applies verdicts. Its tests (`tests/test_orchestrator.py`) use a fake GitHub and stubbed agents; extend the fakes rather than calling real CLIs in tests.
 - Role prompts live in `office/prompts/`, with `{{name}}` placeholders that are filled in a single pass. Every prompt ends with the shared `_verdict.md`. When you add an outcome, update the prompt, the `allowed` set in the orchestrator and a test together.
 - All external commands go through `office/shell.run`, which strips API keys from the environment. Git calls on a target go through `Workspace.git`, which serializes them and retries lock contention.
+- `office/databases.py` drops agents' throwaway databases in the target's compose Postgres. It only ever touches names starting with `office_`; keep that guard.
 - `office/shoot.py` (Playwright) has a real-browser test in `tests/test_shoot.py`. Run `uv run playwright install chromium` once first.
 
 ## What this project is
@@ -61,6 +62,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
   6. Start the loop.
 - **Stop condition:** the office idles and posts a summary of open blockers when no issue can be acted on.
 - **Engineers work in isolation.** Each one gets its own git worktree of the target repo.
+- **The office cleans up after agents.** Anything an agent leaves running in its worktree is stopped, and every database it created under its issue's `office_` prefix is dropped after the run, even a failed one. The office never drops a database outside that prefix.
 - **The docs site is part of every delivery.** The target's MkDocs site and its user manual at `docs/manual/` are updated in the same PR as each user-visible change, screenshots come from `office shoot`, and `mkdocs build --strict` must pass. `office start` serves the site live from the main clone.
 - **Sequencing isn't a human decision.** "Wait for #N" is a `waiting` verdict with `depends_on`, not a blocker. Human requests that conflict with documented scope are blocked, not closed.
 - **Design uses impeccable.** The Designer runs impeccable's `shape` command and produces markdown only (a design doc plus an implementation prompt), never images or Figma files. Engineers use impeccable for UI work, and the tester runs its `detect` command on UI changes.

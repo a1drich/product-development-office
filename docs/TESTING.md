@@ -63,6 +63,7 @@ uv run playwright install chromium    # once, before the screenshot tests
 | `tests/test_clean.py` | Folder naming, legacy migration with real git worktrees, local and GitHub cleanup |
 | `tests/test_readiness.py` | The integration checklist |
 | `tests/test_plan.py` | `office plan` output |
+| `tests/test_databases.py` | Finding the target's Postgres from its compose config, per-repo and per-issue prefixes, and the guard against touching any database outside `office_` |
 | `tests/test_shoot.py` | `office shoot` against a real local server and browser |
 
 The tests never call the real `claude`, `codex` or GitHub. Extend the fakes in `tests/test_orchestrator.py` instead.

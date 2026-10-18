@@ -10,8 +10,8 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
+from office import databases, planner, readiness, shell
 from office import labels as L
-from office import planner, readiness, shell
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
 from office.docs_server import DocsServer
@@ -97,6 +97,7 @@ class Office:
         self.docs = DocsServer(ws.clone, cfg.docs_port, ws.docs_log)
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
+        self.dbs = databases.Databases(ws.clone, gh.repo)
 
     # --- loop -------------------------------------------------------------------
 
@@ -210,6 +211,7 @@ class Office:
                 self.pool = pool
                 try:
                     self.recover_claims()
+                    self.sweep_databases()
                     self.bootstrap()
                     self.loop(exit_when_idle)
                 finally:
@@ -247,6 +249,14 @@ class Office:
                 self.gh.comment(issue.number, "The office restarted; releasing the previous "
                                               f"claim.\n{mark('release')}")
                 log.info("#%s: released a claim left over from the last run", issue.number)
+
+    def sweep_databases(self) -> None:
+        """A fresh office has no agents running, so any database it made for this repo is
+        left over from a run that crashed or was stopped."""
+        dropped = self.dbs.drop()
+        if dropped:
+            log.info("dropped %s database(s) left over from earlier runs: %s", len(dropped),
+                     ", ".join(dropped))
 
     def bootstrap(self) -> None:
         """Every target needs impeccable before design work. If the clone doesn't have it,
@@ -360,6 +370,7 @@ class Office:
             "body": issue.body or "(empty)",
             "comments": format_comments(issue),
             "open_issues": format_open_issues(self.gh.open_issue_titles(), issue.number),
+            "db_prefix": databases.prefix_for(self.gh.repo, issue.number),
             "verify": self.verify,
             "branch": branch_name(issue.number),
             "base": self.ws.default_branch(),
@@ -367,6 +378,20 @@ class Office:
             "docs_build": "uvx --with mkdocs-material mkdocs build --strict",
             **extra,
         }
+
+    def in_worktree(self, role: str, issue: Issue, prompt: str) -> AgentResult:
+        """Runs an agent in the issue's own worktree. Afterwards, even if the run failed,
+        the office drops every database the agent created under the issue's prefix."""
+        path = self.ws.worktree(issue.number)
+        prefix = databases.prefix_for(self.gh.repo, issue.number)
+        try:
+            return run_agent(role, prompt, path, self.cfg, exclusive=True,
+                             env={"OFFICE_DB_PREFIX": prefix})
+        finally:
+            dropped = self.dbs.drop(prefix)
+            if dropped:
+                log.info("#%s: dropped the %s's databases: %s", issue.number, role,
+                         ", ".join(dropped))
 
     def in_clone(self, role: str, prompt: str) -> AgentResult:
         self.ws.update_default_branch()
@@ -406,9 +431,8 @@ class Office:
             "address every blocking finding."
             if pr else "No PR exists yet."
         )
-        path = self.ws.worktree(issue.number)
         prompt = render("engineer", self.values(issue, pr_context=pr_context))
-        result = run_agent("engineer", prompt, path, self.cfg, exclusive=True)
+        result = self.in_worktree("engineer", issue, prompt)
         verdict = self.accept(issue, task, result, {"opened", "blocked", "failed", "waiting"},
                               fallback_status=L.READY)
         if not verdict:
@@ -450,9 +474,8 @@ class Office:
         pr = self.pr_or_requeue(issue, task)
         if not pr:
             return
-        path = self.ws.worktree(issue.number)
         prompt = render("reviewer", self.values(issue, pr=str(pr["number"])))
-        result = run_agent("reviewer", prompt, path, self.cfg, exclusive=True)
+        result = self.in_worktree("reviewer", issue, prompt)
         verdict = self.accept(issue, task, result, {"approve", "changes", "blocked"})
         if not verdict:
             return
@@ -465,9 +488,8 @@ class Office:
         pr = self.pr_or_requeue(issue, task)
         if not pr:
             return
-        path = self.ws.worktree(issue.number)
         prompt = render("tester", self.values(issue, pr=str(pr["number"])))
-        result = run_agent("tester", prompt, path, self.cfg, exclusive=True)
+        result = self.in_worktree("tester", issue, prompt)
         verdict = self.accept(issue, task, result, {"pass", "fail", "blocked"})
         if not verdict:
             return

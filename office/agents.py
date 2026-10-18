@@ -120,7 +120,8 @@ def extract_verdict(text: str) -> Verdict | None:
 
 
 def run_agent(
-    role: str, prompt: str, cwd: Path, cfg: Config, exclusive: bool = False
+    role: str, prompt: str, cwd: Path, cfg: Config, exclusive: bool = False,
+    env: dict[str, str] | None = None,
 ) -> AgentResult:
     """Runs one agent in `cwd`. When the folder is `exclusive` to this agent (an issue's
     worktree), anything it left running there, such as a dev server, is stopped afterwards.
@@ -128,9 +129,9 @@ def run_agent(
     timeout = cfg.agent_timeout_minutes * 60
     try:
         if role in CLAUDE_ROLES:
-            return _run_claude(role, prompt, cwd, cfg, timeout)
+            return _run_claude(role, prompt, cwd, cfg, timeout, env)
         if role in CODEX_ROLES:
-            return _run_codex(role, prompt, cwd, cfg, timeout)
+            return _run_codex(role, prompt, cwd, cfg, timeout, env)
         raise ValueError(f"unknown role {role}")
     finally:
         if exclusive:
@@ -168,13 +169,14 @@ def stop_leftovers(root: Path) -> None:
             pass
 
 
-def _run_claude(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float) -> AgentResult:
+def _run_claude(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float,
+                env: dict[str, str] | None = None) -> AgentResult:
     args = [
         "claude", "-p", prompt,
         "--output-format", "json",
         "--permission-mode", cfg.claude_permission_mode,
     ]
-    res = run(args, cwd=cwd, check=False, timeout=timeout, env=clean_env())
+    res = run(args, cwd=cwd, check=False, timeout=timeout, env=clean_env(env))
     text = res.stdout
     try:
         payload = json.loads(res.stdout)
@@ -186,7 +188,8 @@ def _run_claude(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float) 
     return _finish(role, res.returncode, text, res.stderr)
 
 
-def _run_codex(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float) -> AgentResult:
+def _run_codex(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float,
+               env: dict[str, str] | None = None) -> AgentResult:
     sandbox = cfg.codex_sandbox.get(role, "workspace-write")
     with tempfile.TemporaryDirectory() as tmp:
         schema = Path(tmp) / "schema.json"
@@ -201,7 +204,7 @@ def _run_codex(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float) -
             "-o", str(last),
             prompt,
         ]
-        res = run(args, cwd=cwd, check=False, timeout=timeout, env=clean_env())
+        res = run(args, cwd=cwd, check=False, timeout=timeout, env=clean_env(env))
         text = last.read_text() if last.exists() else ""
     return _finish(role, res.returncode, text or res.stdout, res.stderr)
 
