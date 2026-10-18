@@ -134,6 +134,58 @@ uv run office clean owner/name --github   # also the labels, office branches and
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code), logged in with a Claude subscription
 - [Codex CLI](https://github.com/openai/codex), logged in with a ChatGPT subscription
 
+## Usage
+
+### Day to day
+
+1. **Start the office** in a terminal on your machine and leave it running: `uv run office start owner/name`.
+2. **Ask for things** by opening GitHub issues on the target repo (see below).
+3. **Check in** whenever suits you:
+   - the **"Office status" issue** lists everything waiting on you
+   - the **docs site** at `http://127.0.0.1:8787` shows the current product, with screenshots
+   - **GitHub notifications** show progress comments, PRs, and the changed screens after each merge
+4. **Answer what's waiting:** blockers and practice suggestions, each in under a minute (see below).
+5. **Stop it** with Ctrl-C whenever you like. `office start` resumes where it left off.
+
+### Building a feature
+
+Open an issue on the target repo that describes the outcome you want, in plain language. You don't need to write a spec, acceptance criteria or a design; that's the office's job.
+
+```bash
+gh issue create --repo owner/name \
+  --title "Let customers reorder a past order" \
+  --body "Repeat customers keep rebuilding the same order by hand. From their order history, let them reorder in one tap. Most use the app on their phone."
+```
+
+Or use the "New issue" button on GitHub. What helps:
+
+- **Say who it's for and why**, not how to build it. The PM checks it against `PRODUCT.md` and the docs, and the Designer works out the screens.
+- **One outcome per issue.** The PM splits anything bigger into small issues and links them.
+- **Mark urgency** with a priority label if it matters: `priority:p0` (most urgent) to `priority:p3`, or the repo's own `P0`..`P3`. Without one, the PM sets it.
+- **Mention dependencies** if you know them ("Depends on #12"). The office waits for #12 to close before starting.
+- **Leave the issue unlabelled.** Any open issue without a status label is picked up and triaged on the next cycle, usually within a minute.
+
+What happens next, all visible as comments on the issue:
+
+1. **Triage (PM):** rewrites the issue with a problem statement and acceptance criteria, then sets a priority. It may split the issue, park it until a dependency lands, or file a blocker if it needs a decision from you. A request that conflicts with the documented scope becomes a blocker asking whether to change the scope; it is never silently closed.
+2. **Design (Designer)**, for anything users see: posts a design comment with the flows, states, copy, the user-manual entry and the screens to capture.
+3. **Build (Engineer):** opens a PR that includes tests and the updated user manual, and passes the repo's verify command.
+4. **Review (Codex):** posts its findings on the PR. Blocking findings send the work back to an engineer.
+5. **Test (Codex):** runs everything locally, checks each acceptance criterion, and screenshots and UX-checks every page.
+6. **Merge:** once CI is green, the office squash-merges, closes the issue, posts the changed screens on the PR and the status issue, and the docs site updates.
+
+### Steering work in progress
+
+| You want to | Do this |
+|---|---|
+| Answer a blocker | Comment with your decision on the blocker issue, then remove its `blocked:human` label. |
+| Accept a practice suggestion | Remove `blocked:human` from the `Practice:` issue. |
+| Decline a suggestion or drop a feature | Close the issue. |
+| Pause one issue | Add `blocked:human`; remove it to resume. |
+| Change what an issue asks for | Edit the issue or add a comment. Each role reads the issue and its comments when it starts its step, so the change applies from the next step on. |
+| Make something urgent | Add `priority:p0`. |
+| Re-do a step | Set the status label back, for example to `status:ready` to rebuild, or `status:triage` to re-scope. |
+
 ## How work flows
 
 Issue labels drive the workflow. The orchestrator polls the target repo, finds issues in each state and dispatches them to the matching role.
