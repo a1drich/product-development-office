@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fails if the docs have drifted:
-#   - a tracked markdown file is not linked from README.md
+#   - a tracked markdown file is not linked from README.md (role prompts in
+#     office/prompts/ are prompts, not docs, and are exempt)
 #   - a relative markdown link points at a file that does not exist
 #
 #   ./scripts/check-docs.sh
@@ -12,6 +13,7 @@ fail=0
 # Every markdown file must be linked from README.md.
 while IFS= read -r f; do
   [ "$f" = README.md ] && continue
+  case "$f" in office/prompts/*) continue ;; esac
   if ! grep -qF "]($f)" README.md; then
     echo "not linked from README.md: $f"
     fail=1

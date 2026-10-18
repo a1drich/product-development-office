@@ -1,6 +1,14 @@
 # Integrating an existing repo
 
-This guide prepares an existing GitHub repo so the office can work on it. Most of the steps are repo hygiene that also helps human contributors. The office itself is still being designed, so steps that call it are marked **(planned)**.
+This guide prepares an existing GitHub repo so the office can work on it. Most of the steps are repo hygiene that also helps human contributors.
+
+Start by running the readiness check. It covers every item below that can be checked automatically:
+
+```bash
+uv run office check owner/name                # read-only report
+uv run office check owner/name --run-verify   # also run the verify command on a fresh clone
+uv run office check owner/name --file-issues  # file an issue per gap for the office to fix
+```
 
 Before you start, set up the machine that runs the office: [setup guide, part 1](SETUP.md#1-the-office-machine).
 
@@ -13,6 +21,7 @@ The office can work on a repo once every box below is ticked. The steps that fol
 - [ ] A fresh clone runs locally with no third-party accounts
 - [ ] Tests use their own database, so parallel agents don't collide
 - [ ] The product and design docs live in the repo
+- [ ] The impeccable design skill is committed to the repo
 - [ ] Issues are on and the office labels exist
 - [ ] CI runs the same checks as the verify command
 - [ ] Human-only actions (deploys, secrets, money) are written down
@@ -105,6 +114,18 @@ The Designer writes markdown design documents and engineers build from them, so 
 
 If the frontend uses design tokens, a script that flags raw colors outside the token system makes a cheap addition to `verify`.
 
+### Install impeccable
+
+The Designer plans UI work with the [impeccable](https://github.com/pbakaus/impeccable) design skill, engineers use it for UI changes, and the tester runs its detector. Install it at the repo root and **commit** the result, because the agents work from fresh clones:
+
+```bash
+npx skills add pbakaus/impeccable
+git add .claude/skills/impeccable .agents/skills/impeccable
+git commit -m "Add the impeccable design skill"
+```
+
+If `PRODUCT.md` or `DESIGN.md` is missing, impeccable can write them: in Claude Code, ask it to run impeccable's `init` command (product context) and its `document` command (the design system, generated from the existing code).
+
 ## 5. Set up GitHub
 
 ### Labels
@@ -124,7 +145,7 @@ for p in 0 1 2 3; do
 done
 ```
 
-The office will create these itself on first run **(planned)**. If the repo already has a label for owner-only work, such as `blocked`, keep it and tell the office to use it instead of `blocked:human`.
+`office labels owner/name` creates them too, and `office start` creates any that are missing. If the repo already uses a `blocked` label for owner-only work, or `P0`..`P3` for priority, keep them: the office treats `blocked` like `blocked:human`, and `P0`..`P3` like `priority:p0`..`p3`.
 
 ### Repo settings
 
@@ -157,10 +178,11 @@ gh issue list --repo "$REPO" --state open --limit 500 --json number --jq '.[].nu
   xargs -I{} gh issue edit {} --repo "$REPO" --add-label status:triage
 ```
 
-## 8. Start the office (planned)
+## 8. Start the office
 
 ```bash
-./office start owner/name
+uv run office start owner/name --dry-run   # what it would do, changing nothing
+uv run office start owner/name
 ```
 
 On the first run, watch the PM's triage before letting engineers loose. Check that it read the brief correctly, that issues are small, and that blockers are real decisions rather than guesses it should have made itself.
@@ -169,14 +191,15 @@ While the office runs:
 
 - **Answering a blocker:** comment on the blocker issue with your decision and remove `blocked:human`. The PM picks it up on the next cycle.
 - **Steering:** open an issue, or edit an issue's labels or priority. The office keeps no state outside GitHub, so your changes take effect immediately.
-- **Pausing:** stop the `office` process. Any issue left at `status:in-progress` is released when its claim expires.
+- **Seeing what's waiting on you:** when the office goes idle, it lists every blocked issue in the "Office status" issue.
+- **Pausing:** stop the `office` process with Ctrl-C. Any issue left at `status:in-progress` is released when its claim expires (two hours by default).
 
 ## Removing the office
 
 Stop the process and delete the labels. Nothing else in the repo depends on it: the brief, the verify command and the docs are useful on their own.
 
 ```bash
-for l in $(gh label list --repo "$REPO" --json name --jq '.[].name | select(startswith("status:") or startswith("priority:") or . == "blocked:human")'); do
+for l in $(gh label list --repo "$REPO" --json name --jq '.[].name | select(startswith("status:") or startswith("priority:") or startswith("office:") or . == "blocked:human")'); do
   gh label delete "$l" --repo "$REPO" --yes
 done
 ```

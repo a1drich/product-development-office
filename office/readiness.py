@@ -1,0 +1,153 @@
+"""`office check`: is a target repo ready for the office? Mirrors docs/INTEGRATION.md."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from office import labels as L
+
+FAIL, WARN, PASS = "fail", "warn", "pass"
+
+
+@dataclass
+class Finding:
+    key: str
+    level: str  # pass | warn | fail
+    summary: str
+    fix: str = ""
+
+    @property
+    def issue_title(self) -> str:
+        return f"Office readiness: {self.summary}"
+
+
+def _exists(root: Path, *names: str) -> str | None:
+    for n in names:
+        if (root / n).exists():
+            return n
+    return None
+
+
+def verify_command(root: Path) -> str | None:
+    makefile = root / "Makefile"
+    if makefile.exists() and re.search(r"^verify\s*:", makefile.read_text(), re.M):
+        return "make verify"
+    pkg = root / "package.json"
+    if pkg.exists():
+        try:
+            if "verify" in json.loads(pkg.read_text()).get("scripts", {}):
+                return "npm run verify"
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def check_files(root: Path) -> list[Finding]:
+    out: list[Finding] = []
+
+    if (root / "AGENTS.md").exists():
+        out.append(Finding("agents-md", PASS, "AGENTS.md exists"))
+    elif (root / "CLAUDE.md").exists():
+        out.append(Finding(
+            "agents-md", WARN, "agent guidance is only in CLAUDE.md",
+            "Move CLAUDE.md's content into AGENTS.md (Codex reads AGENTS.md) and make CLAUDE.md "
+            "just `@AGENTS.md`.",
+        ))
+    else:
+        out.append(Finding(
+            "agents-md", FAIL, "no AGENTS.md agent brief",
+            "Write AGENTS.md: how to install, run and test (including a single test), the "
+            "architecture, conventions, and the rules agents must follow.",
+        ))
+
+    claude = root / "CLAUDE.md"
+    if not claude.exists():
+        out.append(Finding("claude-md", WARN, "no CLAUDE.md",
+                           "Add a CLAUDE.md containing `@AGENTS.md` so Claude Code reads it."))
+    elif "@AGENTS.md" in claude.read_text():
+        out.append(Finding("claude-md", PASS, "CLAUDE.md imports AGENTS.md"))
+    elif (root / "AGENTS.md").exists():
+        out.append(Finding("claude-md", WARN, "CLAUDE.md and AGENTS.md are separate files",
+                           "Merge CLAUDE.md into AGENTS.md and replace it with `@AGENTS.md`."))
+
+    cmd = verify_command(root)
+    if cmd:
+        out.append(Finding("verify", PASS, f"verify command: `{cmd}`"))
+    else:
+        out.append(Finding(
+            "verify", FAIL, "no single verify command",
+            "Add `make verify` (or `npm run verify`) that runs lint, tests, typecheck and frontend "
+            "lint and exits non-zero on any failure. It is the definition of done.",
+        ))
+
+    docs = root / "docs"
+    if docs.is_dir() and any(docs.rglob("*.md")):
+        out.append(Finding("docs", PASS, "docs/ exists"))
+    else:
+        out.append(Finding("docs", FAIL, "no docs/ folder",
+                           "Add docs/ with at least a short product brief and a decision log."))
+
+    if (root / "PRODUCT.md").exists():
+        out.append(Finding("product-md", PASS, "PRODUCT.md exists"))
+    else:
+        out.append(Finding(
+            "product-md", WARN, "no PRODUCT.md",
+            "Run impeccable's `init` command to capture users, context and voice in PRODUCT.md.",
+        ))
+
+    design = _exists(root, "DESIGN.md", "docs/design-system.md")
+    if design:
+        out.append(Finding("design-md", PASS, f"design system: {design}"))
+    else:
+        out.append(Finding(
+            "design-md", WARN, "no DESIGN.md design system",
+            "Run impeccable's `document` command to generate DESIGN.md from the existing code.",
+        ))
+
+    imp = _exists(root, ".claude/skills/impeccable", ".agents/skills/impeccable")
+    if imp:
+        out.append(Finding("impeccable", PASS, f"impeccable installed ({imp})"))
+    else:
+        out.append(Finding(
+            "impeccable", FAIL, "impeccable design skill not installed",
+            "Run `npx skills add pbakaus/impeccable` in the repo and commit the result, so the "
+            "Designer and engineers share the same design skill.",
+        ))
+
+    if (root / ".env.example").exists():
+        out.append(Finding("env-example", PASS, ".env.example exists"))
+    else:
+        out.append(Finding("env-example", WARN, "no .env.example",
+                           "Add a .env.example that works as-is for local development."))
+
+    workflows = root / ".github" / "workflows"
+    if workflows.is_dir() and any(workflows.glob("*.y*ml")):
+        out.append(Finding("ci", PASS, "CI workflows exist"))
+    else:
+        out.append(Finding("ci", WARN, "no CI workflow",
+                           "Add a workflow that runs the verify command's checks on PRs."))
+    return out
+
+
+def check_github(repo_info: dict, label_names: set[str]) -> list[Finding]:
+    out: list[Finding] = []
+    if repo_info.get("hasIssuesEnabled"):
+        out.append(Finding("issues", PASS, "GitHub Issues enabled"))
+    else:
+        out.append(Finding("issues", FAIL, "GitHub Issues disabled",
+                           "gh repo edit owner/name --enable-issues"))
+    missing = [lb.name for lb in L.LABELS if lb.name not in label_names]
+    if missing:
+        out.append(Finding("labels", WARN, f"{len(missing)} office labels missing",
+                           "`office labels owner/name` creates them; `office start` does too."))
+    else:
+        out.append(Finding("labels", PASS, "office labels exist"))
+    return out
+
+
+def worst(findings: list[Finding]) -> str:
+    levels = {f.level for f in findings}
+    return FAIL if FAIL in levels else WARN if WARN in levels else PASS

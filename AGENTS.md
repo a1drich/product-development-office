@@ -4,9 +4,27 @@ Guidance for every coding agent working on this repo. Codex reads this file dire
 
 ## Current state
 
-Design stage. `README.md` is the spec. `docs/SETUP.md` covers setting up the office machine, the conventions target repos are expected to follow, and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo.
+Early. The orchestrator, the five roles, `office check` and `office start` are built and unit tested. Each agent CLI has been smoke-tested, but the full loop hasn't run end to end on a live repo yet. `README.md` is the spec and documents the architecture. `docs/SETUP.md` covers the office machine, target-repo conventions and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo.
 
-There is no code, build, lint or test setup yet. Add those commands here once they exist. Don't assume any. The only command today is `./scripts/check-docs.sh`.
+## Commands
+
+```bash
+uv sync                                  # install
+make verify                              # ruff + pytest + docs check: the definition of done
+uv run pytest tests/test_planner.py      # one test file
+uv run pytest -k blocker                 # tests matching a name
+uv run office check owner/name           # readiness check (read-only)
+uv run office start owner/name --dry-run # print the plan, change nothing
+```
+
+Never run `office start` without `--dry-run` against a repo the owner hasn't asked you to work on: it files issues, pushes branches and merges PRs.
+
+## Code map
+
+- `office/planner.py` is pure logic (labels → next task) and has no I/O. Keep it that way, and test changes to it in `tests/test_planner.py`.
+- `office/orchestrator.py` applies verdicts. Its tests (`tests/test_orchestrator.py`) use a fake GitHub and stubbed agents; extend the fakes rather than calling real CLIs in tests.
+- Role prompts live in `office/prompts/`, with `{{name}}` placeholders that are filled in a single pass. Every prompt ends with the shared `_verdict.md`. When you add an outcome, update the prompt, the `allowed` set in the orchestrator and a test together.
+- All external commands go through `office/shell.run`, which strips API keys from the environment.
 
 ## What this project is
 
@@ -16,8 +34,9 @@ A Python orchestrator that runs an agent swarm on a **target** GitHub repo. That
 
 These come from the README and are hard requirements. Read the README for the full reasoning.
 
-- **GitHub Issues is the only state.** Issues, labels, comments and PRs on the target repo hold all task state. The orchestrator keeps no hidden state of its own. Agents act on GitHub only through a thin adapter over `gh`.
-- **Labels form a state machine.** The flow is `status:triage` → `status:design` (optional) → `status:ready` → `status:in-progress` → `status:in-review` → `status:testing` → `status:done`. Anything waiting on a human is labelled `blocked:human`, and agents skip it. A rejected review or a failed test sends the issue back to `status:ready`. To claim an issue, an agent assigns it and adds `status:in-progress`. Stale claims must expire.
+- **GitHub Issues is the only state.** Issues, labels, comments and PRs on the target repo hold all task state. The orchestrator keeps no hidden state beyond which agents it is currently running, and it touches GitHub only through `office/gh.py`.
+- **Agents do the work; the orchestrator moves the cards.** Agents end with a JSON verdict. Only the orchestrator changes status labels, files blockers, files follow-up issues and merges.
+- **Labels form a state machine.** The flow is `status:triage` → `status:design` (optional) → `status:ready` → `status:in-progress` → `status:in-review` → `status:testing` → `status:done`. Anything waiting on a human is labelled `blocked:human` (a repo's own `blocked` label counts too), and agents skip it. An open issue with no status label is treated as triage. A rejected review or a failed test sends the issue back to `status:ready`. To claim an issue, an agent assigns it and adds `status:in-progress`. Stale claims must expire.
 - **Each role runs on a fixed CLI and subscription:**
   - PM, Designer and Engineers run on `claude` (Claude Code, headless `-p`) with a Claude subscription.
   - Reviewers and Testers run on `codex` with a ChatGPT subscription.
@@ -27,7 +46,7 @@ These come from the README and are hard requirements. Read the README for the fu
 - **Merging and deploying are treated differently.**
   - The Tester merges a PR only after the target repo's full verification gate passes locally and the acceptance criteria are verified. CI must also pass if the repo has it.
   - Deploying and releasing are always a human decision. A merge never triggers either.
-- **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks.
+- **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks, and is labelled `office:blocker` plus `blocked:human`. Three failures in a row on one issue also file a blocker.
 - **Startup has a fixed sequence:**
   1. Ask for the target repo (`owner/name`), or read it from a CLI argument or saved config.
   2. Check `gh`, `claude` and `codex` auth.
@@ -36,7 +55,7 @@ These come from the README and are hard requirements. Read the README for the fu
   5. Start the loop.
 - **Stop condition:** the office idles and posts a summary of open blockers when no issue can be acted on.
 - **Engineers work in isolation.** Each one gets its own git worktree of the target repo.
-- **The Designer produces markdown only:** design documents and prompts, never images or Figma files.
+- **Design uses impeccable.** The Designer runs impeccable's `shape` command and produces markdown only (a design doc plus an implementation prompt), never images or Figma files. Engineers use impeccable for UI work, and the tester runs its `detect` command on UI changes.
 - **The orchestrator runs locally** as a long-running process, not on a server or in GitHub Actions.
 
 ## Target repos
@@ -45,7 +64,7 @@ The office is optimized for target repos that use Django, DRF and `uv`/`ruff` fo
 
 - an `AGENTS.md` (with a `CLAUDE.md` that imports it) and `docs/`, which every agent reads first
 - a single `make verify` or `npm run verify` command as the definition of done
-- the design system kept in the repo
+- the design system kept in the repo, with the impeccable skill committed
 
 Role prompts should build on these conventions instead of re-describing them.
 

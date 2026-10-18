@@ -6,7 +6,7 @@ This guide covers three things:
 2. [Preparing a target repo](#2-preparing-a-target-repo) so the agents can work on it
 3. [Deploying a target repo](#3-deploying-to-hetzner-behind-traefik) to Hetzner behind Traefik
 
-The office is still being designed, so the commands for the office itself (`./office start`) are planned. The target-repo and deployment sections describe a setup that is already running in production.
+The target-repo and deployment sections describe a setup that is already running in production.
 
 ---
 
@@ -18,7 +18,7 @@ The office runs as a long-running process on a local machine.
 
 | Tool | Why |
 |---|---|
-| [Python](https://www.python.org/) 3.12+ and [uv](https://docs.astral.sh/uv/) | Runs the orchestrator |
+| [uv](https://docs.astral.sh/uv/) | Runs the orchestrator, and installs Python 3.12+ for it |
 | [GitHub CLI](https://cli.github.com/) (`gh`) | All issue, label and PR work |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | PM, Designer and Engineers |
 | [Codex CLI](https://github.com/openai/codex) | Reviewers and Testers |
@@ -31,22 +31,29 @@ The office runs as a long-running process on a local machine.
 gh auth login                                  # needs write access to the target repo
 gh auth refresh -h github.com -s workflow      # only if agents should edit .github/workflows/
 
-claude                                         # then /login with a Claude Pro/Max account
+claude                                         # then /login with a Claude subscription
 codex login                                    # choose "Sign in with ChatGPT"
 ```
 
 Make sure no API keys are set in your shell. The office refuses to start if one is set:
 
 ```bash
-unset ANTHROPIC_API_KEY OPENAI_API_KEY
+unset ANTHROPIC_API_KEY OPENAI_API_KEY ANTHROPIC_AUTH_TOKEN
 ```
 
-### Start (planned)
+### Install and start
 
 ```bash
-./office start                    # asks which repo: owner/name
-./office start acme/widget-app    # or pass it directly
+git clone https://github.com/a1drich/product-development-office
+cd product-development-office
+uv sync
+
+uv run office check acme/widget-app          # is the repo ready?
+uv run office start acme/widget-app --dry-run
+uv run office start acme/widget-app          # or just `office start` to be asked
 ```
+
+For an existing repo, work through the [integration guide](INTEGRATION.md) first.
 
 ---
 
@@ -120,6 +127,7 @@ make ui-check  # optional: headless smoke test of the running app at phone width
 ### GitHub
 
 - Turn on Issues. The office creates its labels on first run.
+- Commit the [impeccable](https://github.com/pbakaus/impeccable) design skill (`npx skills add pbakaus/impeccable`), so every agent's fresh clone has it.
 - Add CI (`.github/workflows/ci.yml`) that runs the same checks as `make verify` on pull requests. The tester waits for it before merging.
 - Protect `main` from force-pushes. Agents merge PRs, but only through `gh pr merge`.
 
