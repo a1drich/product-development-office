@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from office import labels as L
-from office import orchestrator, readiness
+from office import orchestrator, readiness, shell
 from office.agents import AgentResult, Verdict
 from office.config import Config
 from office.gh import Comment, Issue
@@ -430,6 +430,37 @@ def test_conflicting_pr_goes_back_without_running_an_agent(make_office, kind, st
     assert L.READY in gh.issues[1].labels
     assert "conflicts with `main`" in gh.issues[1].comments[-1].body
     assert gh.merged == []
+
+
+def test_conflict_appearing_during_testing_goes_back_without_a_failure(make_office,
+                                                                      monkeypatch):
+    office, gh = make_office([Issue(1, "x", "", {L.TESTING})], [])
+    gh.prs[1] = {"number": 5}
+
+    def tester(role, prompt, cwd, cfg, exclusive=False):
+        gh.conflicting.add(5)  # another PR merged while this one was tested
+        return AgentResult(role, Verdict("pass", "all good"), "")
+
+    monkeypatch.setattr(orchestrator, "run_agent", tester)
+    office.execute(Task("test", 1))
+    assert gh.merged == []
+    assert L.READY in gh.issues[1].labels
+    assert not any(FAILED_MARK in c.body for c in gh.issues[1].comments)
+
+
+def test_merge_rejected_for_conflicts_goes_back_without_a_failure(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.TESTING})], [Verdict("pass", "all good")])
+    gh.prs[1] = {"number": 5}
+
+    def merge_pr(pr):  # GitHub hadn't computed mergeability, so the pre-check passed
+        raise shell.CommandError(["gh", "pr", "merge"], shell.Result(
+            1, "", "GraphQL: Pull Request has merge conflicts (mergePullRequest)"))
+
+    gh.merge_pr = merge_pr
+    office.execute(Task("test", 1))
+    assert L.READY in gh.issues[1].labels
+    assert "conflicts with `main`" in gh.issues[1].comments[-1].body
+    assert not any(FAILED_MARK in c.body for c in gh.issues[1].comments)
 
 
 def run_with_signals(office, gh, signals, agent_seconds):

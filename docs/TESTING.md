@@ -7,7 +7,7 @@ How the office verifies every change before it merges, and how to test the offic
 No PR merges until it has passed every step below. A failure at any step sends the issue back to an engineer, with the reason as a comment.
 
 1. **The engineer's own gate.** Before opening or updating a PR, the engineer merges the latest base branch, then runs the repo's verify command (`make verify` or `npm run verify`) until it passes. For anything users see, it also builds the docs site with `mkdocs build --strict`.
-2. **A merge-conflict check.** Before a review or test, the office asks GitHub whether the PR merges cleanly. A conflicting PR goes straight back to an engineer, without spending a Codex run.
+2. **A merge-conflict check.** Before a review or test, and again just before merging (another PR may have merged while this one was being tested), the office asks GitHub whether the PR merges cleanly. A conflicting PR goes straight back to an engineer, without spending a Codex run, and the conflict isn't counted as a failure.
 3. **Code review (Codex).** A different model from the one that wrote the code reviews the diff for correctness, security, data safety (such as tenancy scoping, migrations and secrets), missing tests, and conformance with the repo's `AGENTS.md`. It posts its findings as a PR comment. The office runs under your GitHub account, which can't approve its own PRs, so the reviewer's verdict (`approve` or `changes`) decides whether the issue moves on.
 4. **Testing (Codex).** The tester checks out the PR in its own worktree and:
    - merges the latest base branch; a conflict, or a clashing Django migration, is a failure

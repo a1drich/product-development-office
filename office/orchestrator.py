@@ -433,15 +433,18 @@ class Office:
                                 status=L.READY)
             return None
         if self.gh.pr_conflicts(pr["number"]):
-            self.gh.set_status(issue, L.READY)
-            self.gh.comment(issue.number,
-                            f"PR #{pr['number']} conflicts with `{self.ws.default_branch()}`. "
-                            "Merge the latest base branch into it and resolve the conflicts.\n"
-                            f"{mark('conflict')}")
-            log.info("#%s: PR #%s conflicts with base; back to an engineer", issue.number,
-                     pr["number"])
+            self.send_back_conflicting(issue, pr["number"])
             return None
         return pr
+
+    def send_back_conflicting(self, issue: Issue, pr: int) -> None:
+        """A conflict is the base branch moving on, not a failed run, so it isn't counted."""
+        self.gh.set_status(issue, L.READY)
+        self.gh.comment(issue.number,
+                        f"PR #{pr} conflicts with `{self.ws.default_branch()}`. "
+                        "Merge the latest base branch into it and resolve the conflicts.\n"
+                        f"{mark('conflict')}")
+        log.info("#%s: PR #%s conflicts with base; back to an engineer", issue.number, pr)
 
     def do_review(self, issue: Issue, task: Task) -> None:
         pr = self.pr_or_requeue(issue, task)
@@ -488,10 +491,21 @@ class Office:
                              f"{detail[-1500:]}\n```")
                 return
             self.stopping.wait(60)
+        # Another PR may have merged while this one was being tested.
+        if self.gh.pr_conflicts(pr):
+            self.send_back_conflicting(issue, pr)
+            return
         screens = self.screens_markdown(pr)
         if screens:
             self.gh.pr_comment(pr, f"## Screens in this change\n\n{screens}\n{mark('screens')}")
-        self.gh.merge_pr(pr)
+        try:
+            self.gh.merge_pr(pr)
+        except shell.CommandError as e:
+            # GitHub computes mergeability lazily, so the check above can miss a conflict.
+            if "merge conflict" not in str(e).lower():
+                raise
+            self.send_back_conflicting(issue, pr)
+            return
         self.advance(issue, L.DONE, verdict, f"Tested and merged PR #{pr}")
         self.ws.remove_worktree(issue.number)
         # Refresh the main clone, so the live docs site shows the merged change.
