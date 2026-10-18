@@ -19,6 +19,7 @@ class FakeGitHub:
         self.merged = []
         self.checks = (True, "")
         self.files = {}
+        self.conflicting = set()
         self.pr_comments = []
 
     def open_issues(self):
@@ -54,6 +55,9 @@ class FakeGitHub:
 
     def pr_checks_passing(self, pr):
         return self.checks
+
+    def pr_conflicts(self, pr):
+        return pr in self.conflicting
 
     def pr_files(self, pr):
         return "abc123", self.files.get(pr, [])
@@ -316,3 +320,29 @@ def test_merge_without_screens_posts_nothing(make_office):
     gh.files[5] = ["notes/views.py"]
     office.execute(Task("test", 1))
     assert gh.pr_comments == [] and gh.merged == [5]
+
+
+def test_restart_releases_leftover_claims(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.IN_PROGRESS}), Issue(2, "y", "", {L.READY})], [])
+    office.recover_claims()
+    assert L.READY in gh.issues[1].labels and L.IN_PROGRESS not in gh.issues[1].labels
+    assert gh.issues[2].comments == []
+
+
+def test_runs_interrupted_by_shutdown_are_not_failures(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.DESIGN})],
+                             [AgentResult("designer", None, "", error="interrupted")])
+    office.stopping.set()
+    office.execute(Task("design", 1))
+    assert not any(FAILED_MARK in c.body for c in gh.issues[1].comments)
+
+
+@pytest.mark.parametrize("kind,status", [("review", L.IN_REVIEW), ("test", L.TESTING)])
+def test_conflicting_pr_goes_back_without_running_an_agent(make_office, kind, status):
+    office, gh = make_office([Issue(1, "x", "", {status})], [])  # no agent results queued
+    gh.prs[1] = {"number": 5}
+    gh.conflicting.add(5)
+    office.execute(Task(kind, 1))
+    assert L.READY in gh.issues[1].labels
+    assert "conflicts with `main`" in gh.issues[1].comments[-1].body
+    assert gh.merged == []

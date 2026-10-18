@@ -116,7 +116,7 @@ def cmd_start(args: argparse.Namespace, cfg: Config) -> int:
     try:
         office.run(exit_when_idle=args.exit_when_idle)
     except KeyboardInterrupt:
-        print("\nstopped. Claims held by running agents are released when they expire.")
+        print("\nstopped. Run `office start` again to pick up where it left off.")
     return 0
 
 

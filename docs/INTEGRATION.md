@@ -238,7 +238,7 @@ While the office runs:
 - **Practice suggestions:** the office keeps filing `Practice:` issues with improvements for the repo, such as stale docs, missing tests or a slow verify command. They wait for you: remove `blocked:human` to accept one, or close it to decline.
 - **Reviewing the product:** while the office runs, the target's docs site is live at `http://127.0.0.1:8787` and refreshes after every merge. Changed screens are posted on each PR and on the "Office status" issue.
 - **Seeing what's waiting on you:** when the office goes idle, it lists every blocked issue in the "Office status" issue.
-- **Pausing:** stop the `office` process with Ctrl-C. Any issue left at `status:in-progress` is released when its claim expires (two hours by default).
+- **Pausing:** stop the `office` process with Ctrl-C, and run `office start` again to resume. Interrupted steps rerun, and leftover engineering claims are released at startup.
 
 ## Removing the office
 

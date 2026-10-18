@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -60,6 +61,7 @@ class Office:
         self.paused_until: dict[str, datetime] = {}
         self.last_summary = ""
         self.status_issue: int | None = None
+        self.stopping = threading.Event()
         self.docs = DocsServer(ws.clone, cfg.docs_port)
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
@@ -162,9 +164,29 @@ class Office:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             self.pool = pool
             try:
+                if not self.dry_run:
+                    self.recover_claims()
                 self.loop(exit_when_idle)
+            except KeyboardInterrupt:
+                # Agents get the same Ctrl-C. Don't count their interrupted runs as
+                # failures, and don't start anything new while they wind down.
+                self.stopping.set()
+                log.info("stopping: waiting for running agents to exit")
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise
             finally:
                 self.docs.stop()
+
+    def recover_claims(self) -> None:
+        """A fresh office has no agents running, so every in-progress claim is left over
+        from a previous run that stopped. Release them now instead of waiting for them to
+        expire."""
+        for issue in self.gh.open_issues():
+            if issue.status == L.IN_PROGRESS:
+                self.gh.set_status(issue, L.READY)
+                self.gh.comment(issue.number, "The office restarted; releasing the previous "
+                                              f"claim.\n{mark('release')}")
+                log.info("#%s: released a claim left over from the last run", issue.number)
 
     def loop(self, exit_when_idle: bool) -> None:
         while True:
@@ -318,10 +340,22 @@ class Office:
             self.advance(issue, L.IN_REVIEW, verdict, f"PR #{pr['number']}")
 
     def pr_or_requeue(self, issue: Issue, task: Task) -> dict | None:
+        """The issue's open PR, if it can go to review or test. A PR that conflicts with
+        the base branch goes straight back to an engineer, without spending a Codex run."""
         pr = self.gh.pr_for_issue(issue.number)
         if not pr:
             self.record_failure(issue, task, f"no open PR for `{branch_name(issue.number)}`",
                                 status=L.READY)
+            return None
+        if self.gh.pr_conflicts(pr["number"]):
+            self.gh.set_status(issue, L.READY)
+            self.gh.comment(issue.number,
+                            f"PR #{pr['number']} conflicts with `{self.ws.default_branch()}`. "
+                            "Merge the latest base branch into it and resolve the conflicts.\n"
+                            f"{mark('conflict')}")
+            log.info("#%s: PR #%s conflicts with base; back to an engineer", issue.number,
+                     pr["number"])
+            return None
         return pr
 
     def do_review(self, issue: Issue, task: Task) -> None:
@@ -503,6 +537,10 @@ class Office:
 
     def record_failure(self, issue: Issue, task: Task, reason: str,
                        status: str | None = None) -> None:
+        if self.stopping.is_set():
+            log.info("%s on #%s interrupted by shutdown; not counted as a failure",
+                     task.kind, issue.number)
+            return
         count = planner.failures(issue) + 1
         log.warning("%s on #%s failed (%s/%s): %s", task.kind, issue.number, count, MAX_FAILURES,
                     reason)

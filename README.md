@@ -83,7 +83,12 @@ Startup steps:
 2. Check that no API key is set, and that `gh`, `claude` (subscription login) and `codex` (ChatGPT login) are logged in. Startup refuses to continue otherwise.
 3. Clone the repo into `workspace/`, which this project's git history doesn't track.
 4. Create any missing office labels on the target repo.
-5. Hand control to the orchestrator loop. Stop it with Ctrl-C.
+5. Release any `status:in-progress` claims left over from a previous run (a fresh office has no agents running), then hand control to the orchestrator loop.
+
+**Stopping and resuming.** Stop the office with Ctrl-C at any time, and run `office start` again to pick up where it left off. All state lives in GitHub, so:
+- a step that was interrupted (triage, design, review or test) reruns from the start, because labels only move when an agent finishes;
+- an interrupted engineer's claim is released at the next start, and any work it had pushed is kept;
+- runs cut short by the shutdown aren't counted as failures.
 
 | Command | What it does |
 |---|---|
@@ -228,8 +233,9 @@ These rules are hard requirements, and `office start` enforces them:
 How it fits together:
 
 - **Agents do the work; the office moves the cards.** Agents edit issue bodies, write code, open PRs and post review and test reports. Each one ends with a JSON verdict, such as `ready`, `opened`, `approve`, `changes`, `pass`, `fail` or `blocked`. Only the orchestrator changes status labels, files blockers and merges, so the state machine never depends on an agent remembering to update a label.
-- **Claims.** Before an engineer starts, the office assigns the issue, sets `status:in-progress` and posts a claim comment. A claim older than `claim_ttl_minutes` (two hours by default) with no agent running is released back to `status:ready`. That covers crashed or stopped runs.
+- **Claims.** Before an engineer starts, the office assigns the issue, sets `status:in-progress` and posts a claim comment. At startup, every leftover claim is released. While running, a claim older than `claim_ttl_minutes` (two hours by default) with no agent running is also released back to `status:ready`.
 - **Reviews are PR comments.** The office runs under your GitHub account, which can't approve its own PRs. The reviewer posts its findings as a PR comment, and its verdict decides whether the issue moves on.
+- **Conflicts.** Engineers merge the latest base branch before pushing. Before a review or test, the office asks GitHub whether the PR merges cleanly, and sends a conflicting PR straight back to an engineer without spending a Codex run.
 - **Merging.** After a `pass` verdict, the office waits up to 30 minutes for the PR's CI checks, then squash-merges and deletes the branch. If CI fails, the issue goes back to an engineer.
 - **Cleanup.** When an agent finishes in an issue's worktree, the office stops anything it left running there, such as a dev server. The shared main clone is never cleaned, because other agents may be working in it.
 - **Dependencies.** An agent that can't continue until another issue lands returns `waiting` with the issue numbers. That isn't a human decision, so the office parks the issue with `office:waiting` and requeues it when those issues close.

@@ -179,6 +179,13 @@ class GitHub:
             return True, ""
         return False, (res.stdout or res.stderr).strip()
 
+    def pr_conflicts(self, pr: int) -> bool:
+        """True when GitHub says the PR can't merge cleanly. GitHub computes this lazily,
+        so an UNKNOWN answer is treated as no conflict; the tester's merge step still
+        catches it."""
+        data = self._gh_json("pr", "view", str(pr), "--json", "mergeable")
+        return data.get("mergeable") == "CONFLICTING"
+
     def pr_files(self, pr: int) -> tuple[str, list[str]]:
         """The PR's head commit and the paths it changes."""
         data = self._gh_json("pr", "view", str(pr), "--json", "headRefOid,files")
