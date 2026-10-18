@@ -1,0 +1,177 @@
+# Integrating an existing repo
+
+This guide prepares an existing GitHub repo so the office can work on it. Most of the steps are repo hygiene that also helps human contributors. The office itself is still being designed, so steps that call it are marked **(planned)**.
+
+Before you start, set up the machine that runs the office: [setup guide, part 1](SETUP.md#1-the-office-machine).
+
+## Readiness checklist
+
+The office can work on a repo once every box below is ticked. The steps that follow cover each one.
+
+- [ ] `CLAUDE.md` and `AGENTS.md` describe the commands, architecture and rules
+- [ ] One command runs every check: `make verify` or `npm run verify`
+- [ ] A fresh clone runs locally with no third-party accounts
+- [ ] Tests use their own database, so parallel agents don't collide
+- [ ] The product and design docs live in the repo
+- [ ] Issues are on and the office labels exist
+- [ ] CI runs the same checks as the verify command
+- [ ] Human-only actions (deploys, secrets, money) are written down
+
+---
+
+## 1. Write the agent brief
+
+Every agent reads these files before touching anything. They are the most important part of the integration.
+
+**`CLAUDE.md`.** Generate a first draft by running `/init` in Claude Code at the repo root, then edit it. It should cover:
+- how to install, run and test, including how to run a single test
+- the big-picture architecture: how the apps fit together and where the risky logic lives
+- conventions an agent would otherwise break, such as how querysets are scoped or which Tailwind version is used
+- links to the deeper docs in `docs/`
+
+**`AGENTS.md`.** Codex (the reviewer and tester) reads this file. Keep it short and point to `CLAUDE.md` for the details. Put the rules here:
+
+```markdown
+# Agent guidance
+
+Read `CLAUDE.md` for commands, architecture and conventions.
+
+- Run `make verify` before calling any change done.
+- One small PR per issue, with tests and doc updates in the same PR.
+- Work in your own git worktree; never touch another agent's uncommitted work.
+- Follow `docs/decisions.md`. If a decision seems wrong, file a blocker instead of changing it.
+- Split any issue that mixes codeable work with owner-only work.
+- Never deploy, release, edit production settings or change GitHub secrets.
+```
+
+**`docs/`.** At minimum, add a short product brief (who it's for, what it does, what it deliberately won't do) and a decision log. The PM uses the brief to judge scope, and the decision log stops agents from "fixing" deliberate tradeoffs.
+
+## 2. Add one verify command
+
+Agents treat a single command as the definition of done. Engineers run it before opening a PR, and testers run it again before merging. If the repo has no such command, add one.
+
+With a Makefile:
+
+```makefile
+.PHONY: test lint typecheck lint-fe verify
+
+test:
+	cd api && uv run pytest -q
+
+lint:
+	cd api && uv run ruff check .
+
+typecheck:
+	cd app && npm run typecheck
+
+lint-fe:
+	cd app && npm run lint
+
+# The full gate. Run this before calling a change done.
+verify: lint test typecheck lint-fe
+```
+
+Or with npm workspaces, add `"verify": "./scripts/verify.sh"` to the root `package.json` and have that script run each stage in order and fail fast.
+
+Things to check:
+- **Typecheck explicitly.** Nuxt and Next.js production builds often skip type checking, so a passing build doesn't prove the types are right.
+- **Keep the command quiet and fast.** Agents will run it many times. If the full suite takes minutes, document how to run a single test in `CLAUDE.md`.
+- **Exit non-zero on any failure.** Agents trust the exit code.
+
+## 3. Make local development self-contained
+
+The engineers and testers run everything on your machine, in parallel, without your accounts.
+
+- **Compose file:** `docker-compose.yml` starts Postgres (and Redis if needed).
+- **Env defaults:** `.env.example` works as-is for local development. Add a `make env` target that copies it to `.env` without overwriting an existing one.
+- **Mocked external services:** put each one (payments, OAuth, messaging) behind a flag such as `PAYMENTS_MOCK=true`, so the whole product runs end to end offline.
+- **Demo data:** a `seed_demo` management command (`make seed`) creates realistic data, so the tester can exercise real flows.
+- **Separate test database:** tests use their own database, and its name can be overridden per run, for example `TEST_DB_NAME=myapp_test_agent2`. Several agents running the suite at once must not share one.
+- **Configurable ports:** dev server ports can be set from env vars, so two worktrees can run at the same time.
+
+To check: clone the repo into a new folder, then run `make env install up migrate seed verify`. It should pass with no manual steps.
+
+## 4. Put the design system in the repo
+
+The Designer writes markdown design documents and engineers build from them, so the existing visual system has to be written down:
+
+- `PRODUCT.md`: the users, the conditions they use the product in (device, connection, language) and the tone of voice
+- `DESIGN.md` or `docs/design-system.md`: tokens, shared components, layout and typography rules
+
+If the frontend uses design tokens, a script that flags raw colors outside the token system makes a cheap addition to `verify`.
+
+## 5. Set up GitHub
+
+### Labels
+
+Create the office labels. This is safe to re-run, because `--force` updates labels that already exist:
+
+```bash
+REPO=owner/name
+
+for l in triage design ready in-progress in-review testing done; do
+  gh label create "status:$l" --repo "$REPO" --color 0E8A16 --force
+done
+gh label create "blocked:human" --repo "$REPO" --color B60205 --force \
+  --description "Waiting for a human decision"
+for p in 0 1 2 3; do
+  gh label create "priority:p$p" --repo "$REPO" --color FBCA04 --force
+done
+```
+
+The office will create these itself on first run **(planned)**. If the repo already has a label for owner-only work, such as `blocked`, keep it and tell the office to use it instead of `blocked:human`.
+
+### Repo settings
+
+```bash
+gh repo edit "$REPO" --enable-issues --delete-branch-on-merge
+```
+
+- **Branch protection:** protect `main` from force-pushes and deletion. Agents merge with `gh pr merge` only.
+- **CI:** add a workflow that runs the same checks as `verify` on pull requests. The tester waits for it before merging.
+- **Workflow scope:** if agents should be allowed to edit `.github/workflows/`, the `gh` token needs the `workflow` scope: `gh auth refresh -h github.com -s workflow`.
+
+## 6. Write down what only a human can do
+
+Agents file a blocker whenever they hit one of these, so list them explicitly in `AGENTS.md` or `docs/OWNER-TODO.md`. Typical items:
+
+- deploying or releasing (`make release` and similar)
+- production settings, secrets, DNS and third-party dashboards
+- anything that costs money or signs a contract
+- legal, privacy and brand copy
+- reversing a documented decision
+
+## 7. Prepare the backlog
+
+- Label existing open issues `status:triage`. The PM will scope them, add acceptance criteria and set priorities.
+- Close stale issues first, so the PM doesn't spend effort on them.
+- For a repo with no issues, open one issue describing the next goal, such as "v1 launch: what's missing". The PM breaks it down.
+
+```bash
+gh issue list --repo "$REPO" --state open --limit 500 --json number --jq '.[].number' |
+  xargs -I{} gh issue edit {} --repo "$REPO" --add-label status:triage
+```
+
+## 8. Start the office (planned)
+
+```bash
+./office start owner/name
+```
+
+On the first run, watch the PM's triage before letting engineers loose. Check that it read the brief correctly, that issues are small, and that blockers are real decisions rather than guesses it should have made itself.
+
+While the office runs:
+
+- **Answering a blocker:** comment on the blocker issue with your decision and remove `blocked:human`. The PM picks it up on the next cycle.
+- **Steering:** open an issue, or edit an issue's labels or priority. The office keeps no state outside GitHub, so your changes take effect immediately.
+- **Pausing:** stop the `office` process. Any issue left at `status:in-progress` is released when its claim expires.
+
+## Removing the office
+
+Stop the process and delete the labels. Nothing else in the repo depends on it: the brief, the verify command and the docs are useful on their own.
+
+```bash
+for l in $(gh label list --repo "$REPO" --json name --jq '.[].name | select(startswith("status:") or startswith("priority:") or . == "blocked:human")'); do
+  gh label delete "$l" --repo "$REPO" --yes
+done
+```

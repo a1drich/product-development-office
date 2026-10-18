@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Design stage. `README.md` is the spec. `docs/SETUP.md` covers setting up the office machine, the conventions target repos are expected to follow, and the Hetzner + Traefik deployment pattern. There is no code, build, lint or test setup yet. Add those commands here once they exist. Don't assume any.
+Design stage. `README.md` is the spec. `docs/SETUP.md` covers setting up the office machine, the conventions target repos are expected to follow, and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo. There is no code, build, lint or test setup yet. Add those commands here once they exist. Don't assume any.
 
 ## What this project is
 

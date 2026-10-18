@@ -21,7 +21,7 @@ It expects these repo conventions:
 - The design system lives in the repo (`DESIGN.md` or `docs/design-system.md`).
 - Releases and deploys are always a human decision. Agents never run them.
 
-See the **[setup guide](docs/SETUP.md)** for installing the office, preparing a target repo and deploying to Hetzner behind Traefik.
+See the **[setup guide](docs/SETUP.md)** for installing the office, preparing a target repo and deploying to Hetzner behind Traefik, and **[integrating an existing repo](docs/INTEGRATION.md)** for onboarding a repo you already have.
 
 ## Core principles
 
