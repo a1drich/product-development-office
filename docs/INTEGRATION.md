@@ -8,7 +8,7 @@ Before you start, set up the machine that runs the office: [setup guide, part 1]
 
 The office can work on a repo once every box below is ticked. The steps that follow cover each one.
 
-- [ ] `CLAUDE.md` and `AGENTS.md` describe the commands, architecture and rules
+- [ ] `AGENTS.md` describes the commands, architecture and rules, and `CLAUDE.md` imports it
 - [ ] One command runs every check: `make verify` or `npm run verify`
 - [ ] A fresh clone runs locally with no third-party accounts
 - [ ] Tests use their own database, so parallel agents don't collide
@@ -23,19 +23,14 @@ The office can work on a repo once every box below is ticked. The steps that fol
 
 Every agent reads these files before touching anything. They are the most important part of the integration.
 
-**`CLAUDE.md`.** Generate a first draft by running `/init` in Claude Code at the repo root, then edit it. It should cover:
+**`AGENTS.md`.** Put all agent guidance in this one file. Codex (the reviewer and tester) reads it directly, and Claude Code reads it through `CLAUDE.md`. A good starting point is to run `/init` in Claude Code at the repo root, then move the result into `AGENTS.md`. It should cover:
 - how to install, run and test, including how to run a single test
 - the big-picture architecture: how the apps fit together and where the risky logic lives
 - conventions an agent would otherwise break, such as how querysets are scoped or which Tailwind version is used
 - links to the deeper docs in `docs/`
-
-**`AGENTS.md`.** Codex (the reviewer and tester) reads this file. Keep it short and point to `CLAUDE.md` for the details. Put the rules here:
+- the working rules, for example:
 
 ```markdown
-# Agent guidance
-
-Read `CLAUDE.md` for commands, architecture and conventions.
-
 - Run `make verify` before calling any change done.
 - One small PR per issue, with tests and doc updates in the same PR.
 - Work in your own git worktree; never touch another agent's uncommitted work.
@@ -43,6 +38,16 @@ Read `CLAUDE.md` for commands, architecture and conventions.
 - Split any issue that mixes codeable work with owner-only work.
 - Never deploy, release, edit production settings or change GitHub secrets.
 ```
+
+**`CLAUDE.md`.** Make it a one-line import, so the two files can never disagree:
+
+```markdown
+# CLAUDE.md
+
+@AGENTS.md
+```
+
+If the repo already has a long `CLAUDE.md`, move its content into `AGENTS.md` and replace it with the import.
 
 **`docs/`.** At minimum, add a short product brief (who it's for, what it does, what it deliberately won't do) and a decision log. The PM uses the brief to judge scope, and the decision log stops agents from "fixing" deliberate tradeoffs.
 
@@ -75,7 +80,7 @@ Or with npm workspaces, add `"verify": "./scripts/verify.sh"` to the root `packa
 
 Things to check:
 - **Typecheck explicitly.** Nuxt and Next.js production builds often skip type checking, so a passing build doesn't prove the types are right.
-- **Keep the command quiet and fast.** Agents will run it many times. If the full suite takes minutes, document how to run a single test in `CLAUDE.md`.
+- **Keep the command quiet and fast.** Agents will run it many times. If the full suite takes minutes, document how to run a single test in `AGENTS.md`.
 - **Exit non-zero on any failure.** Agents trust the exit code.
 
 ## 3. Make local development self-contained

@@ -83,8 +83,8 @@ Makefile             every command an agent needs
 
 | File | Purpose |
 |---|---|
-| `CLAUDE.md` | Commands, architecture and conventions. Every agent reads it first. |
-| `AGENTS.md` | Rules for agents, such as when to file a blocker and what never to touch. Codex reads this file. |
+| `AGENTS.md` | Commands, architecture, conventions and rules, such as when to file a blocker and what never to touch. Every agent reads it first. |
+| `CLAUDE.md` | Just `@AGENTS.md`, so Claude Code reads the same file as Codex |
 | `PRODUCT.md`, `DESIGN.md` or `docs/design-system.md` | Who the users are and the visual system. The Designer works from and updates these. |
 | `docs/` | Strategy, specs, data model, decision log. Agents follow decisions written here instead of "fixing" them. |
 | `docs/BACKLOG.md` (optional) | An index of what's done, what agents can build now and what's blocked |

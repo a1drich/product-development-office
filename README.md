@@ -16,7 +16,7 @@ The office is optimized for repos built on this stack:
 
 It expects these repo conventions:
 
-- `CLAUDE.md`, `AGENTS.md` and `docs/` describe the product, and every agent reads them first.
+- `AGENTS.md` (imported by `CLAUDE.md`) and `docs/` describe the product, and every agent reads them first.
 - A single verification command (`make verify` or `npm run verify`) is the definition of done.
 - The design system lives in the repo (`DESIGN.md` or `docs/design-system.md`).
 - Releases and deploys are always a human decision. Agents never run them.
@@ -27,8 +27,8 @@ It expects these repo conventions:
 |---|---|
 | [docs/SETUP.md](docs/SETUP.md) | Installing the office, preparing a target repo, deploying to Hetzner behind Traefik |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | Step-by-step checklist for onboarding an existing repo |
-| [CLAUDE.md](CLAUDE.md) | Guidance for Claude Code when working on this repo |
-| [AGENTS.md](AGENTS.md) | Rules for any agent working on this repo, including how to keep the docs from drifting |
+| [AGENTS.md](AGENTS.md) | Guidance for any coding agent working on this repo, including how to keep the docs from drifting |
+| [CLAUDE.md](CLAUDE.md) | Imports `AGENTS.md` for Claude Code |
 | [LICENSE](LICENSE) | MIT |
 
 ## Core principles
