@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import threading
 import time
@@ -31,11 +32,35 @@ class Workspace:
         self.clone = root / name
         self.worktrees = root / f"{name}-worktrees"
         self.docs_log = root / f"{name}-mkdocs.log"
+        self.pidfile = root / f"{name}.pid"
         self.lock = threading.RLock()
 
     @property
     def paths(self) -> list[Path]:
-        return [self.clone, self.worktrees, self.docs_log]
+        return [self.clone, self.worktrees, self.docs_log, self.pidfile]
+
+    def running_pid(self) -> int | None:
+        """The pid of the office running on this repo, if one is."""
+        try:
+            pid = int(self.pidfile.read_text().strip())
+            os.kill(pid, 0)
+        except (FileNotFoundError, ValueError, ProcessLookupError):
+            return None
+        except PermissionError:
+            pass  # alive, but owned by someone else
+        return pid
+
+    def acquire_pidfile(self) -> None:
+        pid = self.running_pid()
+        if pid and pid != os.getpid():
+            raise RuntimeError(f"an office is already running on {self.repo} (pid {pid}); "
+                               f"stop it with `office stop {self.repo}`")
+        self.pidfile.parent.mkdir(parents=True, exist_ok=True)
+        self.pidfile.write_text(f"{os.getpid()}\n")
+
+    def release_pidfile(self) -> None:
+        if self.running_pid() == os.getpid():
+            self.pidfile.unlink(missing_ok=True)
 
     def migrate_legacy(self) -> bool:
         """Moves a folder from the old `workspace/<repo>` layout to `<owner>__<repo>`, if

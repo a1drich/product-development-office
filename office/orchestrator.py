@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import signal
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 from office import labels as L
-from office import planner, readiness
+from office import planner, readiness, shell
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
 from office.docs_server import DocsServer
@@ -61,6 +62,9 @@ class Office:
         self.paused_until: dict[str, datetime] = {}
         self.last_summary = ""
         self.status_issue: int | None = None
+        # draining: start nothing new, let running agents finish, then exit.
+        # stopping: stop now; running agents are ended and their runs don't count.
+        self.draining = threading.Event()
         self.stopping = threading.Event()
         self.docs = DocsServer(ws.clone, cfg.docs_port, ws.docs_log)
         self.last_practices: datetime | None = None
@@ -160,22 +164,44 @@ class Office:
         log.info("%s open issues: %s", len(issues), summary or "none")
 
     def run(self, exit_when_idle: bool = False) -> None:
-        workers = sum(self.cfg.limits.values()) + 1
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            self.pool = pool
-            try:
-                if not self.dry_run:
-                    self.recover_claims()
+        if self.dry_run:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                self.pool = pool
                 self.loop(exit_when_idle)
-            except KeyboardInterrupt:
-                # Agents get the same Ctrl-C. Don't count their interrupted runs as
-                # failures, and don't start anything new while they wind down.
-                self.stopping.set()
-                log.info("stopping: waiting for running agents to exit")
-                pool.shutdown(wait=True, cancel_futures=True)
-                raise
-            finally:
-                self.docs.stop()
+            return
+        self.ws.acquire_pidfile()
+        previous = {sig: signal.signal(sig, self.on_signal)
+                    for sig in (signal.SIGINT, signal.SIGTERM)}
+        try:
+            with ThreadPoolExecutor(max_workers=sum(self.cfg.limits.values()) + 1) as pool:
+                self.pool = pool
+                try:
+                    self.recover_claims()
+                    self.loop(exit_when_idle)
+                finally:
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    self.docs.stop()
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+            self.ws.release_pidfile()
+
+    def on_signal(self, signum, frame) -> None:
+        """First Ctrl-C (or `office stop`) drains; a second one (or `office stop --now`, which
+        sends SIGTERM) stops now."""
+        if signum == signal.SIGINT and not self.draining.is_set():
+            self.draining.set()
+            log.info("draining: starting nothing new; %s agent(s) finishing their step. "
+                     "Ctrl-C again, or `office stop --now`, to stop them now.", len(self.running))
+        else:
+            self.hard_stop()
+
+    def hard_stop(self) -> None:
+        self.stopping.set()
+        self.draining.set()
+        ended = shell.stop_all()
+        log.info("stopping now: ended %s running command(s); interrupted steps rerun at the "
+                 "next start", ended)
 
     def recover_claims(self) -> None:
         """A fresh office has no agents running, so every in-progress claim is left over
@@ -191,6 +217,14 @@ class Office:
     def loop(self, exit_when_idle: bool) -> None:
         while True:
             self.reap()
+            if self.draining.is_set():
+                if not self.running:
+                    log.info("all agents finished; stopped")
+                    return
+                if self.stopping.is_set():
+                    shell.stop_all()
+                time.sleep(1)
+                continue
             if not self.dry_run:
                 self.docs.ensure()
             started = self.cycle()
@@ -200,7 +234,8 @@ class Office:
             if idle and exit_when_idle:
                 log.info("nothing left to act on; exiting")
                 return
-            time.sleep(self.cfg.idle_poll_seconds if idle else self.cfg.poll_seconds)
+            # Wakes early when a drain or stop is requested.
+            self.draining.wait(self.cfg.idle_poll_seconds if idle else self.cfg.poll_seconds)
 
     def start(self, task: Task) -> None:
         if task.kind in planner.HOUSEKEEPING:
@@ -395,12 +430,14 @@ class Office:
             passing, detail = self.gh.pr_checks_passing(pr)
             if passing:
                 break
+            if self.stopping.is_set():
+                return  # still `status:testing`; the next start tests it again
             if "fail" in detail.lower() or time.monotonic() > deadline:
                 self.advance(issue, L.READY, verdict,
                              f"Tests passed locally but CI did not pass on PR #{pr}:\n\n```\n"
                              f"{detail[-1500:]}\n```")
                 return
-            time.sleep(60)
+            self.stopping.wait(60)
         screens = self.screens_markdown(pr)
         if screens:
             self.gh.pr_comment(pr, f"## Screens in this change\n\n{screens}\n{mark('screens')}")

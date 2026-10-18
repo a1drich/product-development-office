@@ -44,16 +44,28 @@ Startup steps:
 4. Create any missing office labels on the target repo.
 5. Release any `status:in-progress` claims left over from a previous run (a fresh office has no agents running), then hand control to the orchestrator loop.
 
-**Stopping and resuming.** Stop the office with Ctrl-C at any time, and run `office start` again to pick up where it left off. All state lives in GitHub, so:
-- a step that was interrupted (triage, design, review or test) reruns from the start, because labels only move when an agent finishes;
-- an interrupted engineer's claim is released at the next start, and any work it had pushed is kept;
-- runs cut short by the shutdown aren't counted as failures.
+## Stopping and resuming
+
+| To | In the office's terminal | From another terminal |
+|---|---|---|
+| **Stop once running agents finish** (drain): start nothing new, let each running agent finish its step, apply the verdicts, then exit | Ctrl-C | `office stop owner/name` |
+| **Stop now**: end the running agents and exit | Ctrl-C a second time | `office stop owner/name --now` |
+
+`office stop` waits until the office has exited (add `--no-wait` to return straight away). A drain can take as long as the slowest running step, and a step waiting on CI can take up to 30 minutes, so use `--now` if you can't wait.
+
+Run `office start` again to pick up where it left off. All state lives in GitHub, so:
+- a drained office leaves nothing half done;
+- a step stopped with `--now` (triage, design, review or test) reruns from the start, because labels only move when an agent finishes, and it isn't counted as a failure;
+- a stopped engineer's claim is released at the next start, and any work it had pushed is kept.
+
+Only one office can run per repo. `office start` refuses if another is already running on it.
 
 | Command | What it does |
 |---|---|
 | `office check [repo] [--run-verify] [--file-issues]` | Checks a repo against the [integration checklist](INTEGRATION.md). `--run-verify` also runs its verify command on a fresh clone. `--file-issues` files one `status:triage` issue per gap, so fixing readiness becomes the office's first work. |
 | `office labels [repo]` | Creates the office labels |
 | `office shoot --base-url URL` | Run in a target repo with its app running: screenshots every page in `docs/manual/pages.json` at desktop and mobile width, and reports UX problems |
+| `office stop [repo] [--now] [--no-wait]` | Stops a running office once its agents finish their step, or immediately with `--now` |
 | `office plan [repo]` | Shows every open issue's status, priority and what happens next, in the order the office would take them. Read-only, so it's safe to run while the office is running. |
 | `office clean [repo] [--github] [--yes]` | Removes a project's local folders and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
@@ -71,7 +83,7 @@ Settings such as concurrency per role (`limits`), poll intervals and the claim t
    - **GitHub notifications** show progress comments, PRs, and the changed screens after each merge
    - **`office plan owner/name`** shows, in a second terminal, what every open issue is waiting for
 4. **Answer what's waiting:** blockers and practice suggestions, each in under a minute (see below).
-5. **Stop it** with Ctrl-C whenever you like. `office start` resumes where it left off.
+5. **Stop it** with Ctrl-C (or `office stop owner/name`) whenever you like. It finishes what's running first. `office start` resumes where it left off.
 
 ## Building a feature
 
@@ -125,6 +137,7 @@ What the office keeps locally, all gitignored:
 | `workspace/<owner>__<repo>/` | The main clone of the target |
 | `workspace/<owner>__<repo>-worktrees/` | One worktree per issue being worked on |
 | `workspace/<owner>__<repo>-mkdocs.log` | The live docs server's log |
+| `workspace/<owner>__<repo>.pid` | The running office's process id, used by `office stop`; removed when it exits |
 
 Folders include the owner, so `acme/web` and `other/web` never collide. Folders from older versions, named after the repo alone, are moved to the new names automatically, worktrees included, the next time the office uses them. A folder still in use by a running office is never moved.
 

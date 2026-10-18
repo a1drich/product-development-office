@@ -46,6 +46,7 @@ class DocsServer:
             stdout=logfile,
             stderr=subprocess.STDOUT,
             env=clean_env(),
+            start_new_session=True,  # a Ctrl-C drains the office; it stops this itself
         )
         log.info("docs site: %s (log: %s)", self.url, self.log_path)
 

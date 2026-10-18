@@ -113,10 +113,40 @@ def cmd_start(args: argparse.Namespace, cfg: Config) -> int:
         print(f"✓ labels ready ({len(created)} created)")
     office = Office(cfg, gh, ws, dry_run=args.dry_run)
     print(f"→ verify command: {office.verify}")
-    try:
-        office.run(exit_when_idle=args.exit_when_idle)
-    except KeyboardInterrupt:
-        print("\nstopped. Run `office start` again to pick up where it left off.")
+    if not args.dry_run:
+        print("→ Ctrl-C (or `office stop`) stops after running agents finish; "
+              "press it twice (or `office stop --now`) to stop immediately")
+    office.run(exit_when_idle=args.exit_when_idle)
+    if not args.dry_run:
+        print("stopped. Run `office start` again to pick up where it left off.")
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace, cfg: Config) -> int:
+    import os
+    import signal
+    import time
+
+    repo = args.repo or cfg.repo
+    if not repo or not REPO_RE.match(repo):
+        sys.exit("which repo? `office stop owner/name`")
+    ws = Workspace(repo)
+    pid = ws.running_pid()
+    if not pid:
+        print(f"no office is running on {repo}")
+        return 0
+    if args.now:
+        os.kill(pid, signal.SIGTERM)
+        print(f"stopping the office on {repo} now (pid {pid})")
+    else:
+        os.kill(pid, signal.SIGINT)
+        print(f"draining the office on {repo} (pid {pid}): it starts nothing new and exits "
+              "once running agents finish. `office stop --now` stops it immediately.")
+    if args.no_wait:
+        return 0
+    while ws.running_pid() == pid:
+        time.sleep(2)
+    print("stopped")
     return 0
 
 
@@ -242,6 +272,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pages", default="docs/manual/pages.json")
     p.add_argument("--out", default="docs/manual/screenshots")
     p.set_defaults(fn=cmd_shoot)
+
+    p = sub.add_parser("stop", help="stop a running office once its agents finish "
+                                    "(--now to stop immediately)")
+    p.add_argument("repo", nargs="?")
+    p.add_argument("--now", action="store_true", help="end running agents and stop immediately")
+    p.add_argument("--no-wait", action="store_true", help="don't wait for the office to exit")
+    p.set_defaults(fn=cmd_stop)
 
     p = sub.add_parser("plan", help="show what the office would do next (read-only; safe while "
                                     "the office runs)")

@@ -17,6 +17,7 @@ uv run office check owner/name           # readiness check (read-only)
 uv run office start owner/name --dry-run # print the plan, change nothing
 uv run office docs serve owner/name      # browse a target's docs site
 uv run office plan owner/name            # what happens next (read-only)
+uv run office stop owner/name [--now]    # drain (or stop immediately) a running office
 uv run playwright install chromium       # once, for office shoot and its tests
 ```
 
@@ -62,6 +63,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
 - **The docs site is part of every delivery.** The target's MkDocs site and its user manual at `docs/manual/` are updated in the same PR as each user-visible change, screenshots come from `office shoot`, and `mkdocs build --strict` must pass. `office start` serves the site live from the main clone.
 - **Sequencing isn't a human decision.** "Wait for #N" is a `waiting` verdict with `depends_on`, not a blocker. Human requests that conflict with documented scope are blocked, not closed.
 - **Design uses impeccable.** The Designer runs impeccable's `shape` command and produces markdown only (a design doc plus an implementation prompt), never images or Figma files. Engineers use impeccable for UI work, and the tester runs its `detect` command on UI changes.
+- **Stopping never loses work.** The first Ctrl-C or `office stop` drains: nothing new starts and running agents finish. Only a second Ctrl-C or `--now` ends agents, and those runs never count as failures. Only one office runs per repo.
 - **The orchestrator runs locally** as a long-running process, not on a server or in GitHub Actions.
 
 ## Target repos

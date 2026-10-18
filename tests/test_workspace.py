@@ -30,3 +30,26 @@ def test_git_does_not_retry_other_errors(tmp_path, monkeypatch):
     with pytest.raises(CommandError):
         Workspace("o/r", tmp_path).git("status")
     assert len(calls) == 1
+
+
+def test_pidfile_blocks_a_second_office(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    ws = Workspace("o/r", tmp_path)
+    assert ws.running_pid() is None
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        ws.pidfile.write_text(str(other.pid))
+        assert ws.running_pid() == other.pid
+        with pytest.raises(RuntimeError, match="already running"):
+            ws.acquire_pidfile()
+    finally:
+        other.kill()
+        other.wait()
+    assert ws.running_pid() is None  # stale pidfile
+    ws.acquire_pidfile()
+    assert ws.running_pid() == os.getpid()
+    ws.release_pidfile()
+    assert not ws.pidfile.exists()

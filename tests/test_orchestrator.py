@@ -95,6 +95,12 @@ class FakeWorkspace:
     def remove_worktree(self, n):
         pass
 
+    def acquire_pidfile(self):
+        pass
+
+    def release_pidfile(self):
+        pass
+
 
 @pytest.fixture
 def make_office(tmp_path, monkeypatch):
@@ -347,3 +353,55 @@ def test_conflicting_pr_goes_back_without_running_an_agent(make_office, kind, st
     assert L.READY in gh.issues[1].labels
     assert "conflicts with `main`" in gh.issues[1].comments[-1].body
     assert gh.merged == []
+
+
+def run_with_signals(office, gh, signals, agent_seconds):
+    """Runs the real loop with an agent that takes `agent_seconds`, sending SIGINT to
+    ourselves `signals` times once the agent is busy."""
+    import os
+    import signal
+    import threading
+    import time
+
+    from office import shell
+
+    def agent(role, prompt, cwd, cfg, exclusive=False):
+        res = shell.run(["sleep", str(agent_seconds)], check=False)
+        gh.prs[1] = {"number": 5}
+        if res.ok:
+            return AgentResult(role, Verdict("opened", "built it"), "")
+        return AgentResult(role, None, "", error="killed")
+
+    orchestrator.run_agent = agent
+
+    def send():
+        time.sleep(1)
+        for _ in range(signals):
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(0.3)
+
+    threading.Thread(target=send, daemon=True).start()
+    started = time.monotonic()
+    office.run()
+    return time.monotonic() - started
+
+
+def test_ctrl_c_drains_running_agents_and_starts_nothing_new(make_office, monkeypatch):
+    office, gh = make_office([Issue(1, "x", "", {L.READY}), Issue(2, "y", "", {L.READY})], [])
+    office.cfg.poll_seconds = 1
+    office.cfg.limits["engineer"] = 1
+    monkeypatch.setattr(orchestrator, "run_agent", orchestrator.run_agent)
+    elapsed = run_with_signals(office, gh, signals=1, agent_seconds=3)
+    assert elapsed >= 3  # waited for the running agent
+    assert L.IN_REVIEW in gh.issues[1].labels  # its verdict was applied
+    assert L.READY in gh.issues[2].labels  # nothing new started while draining
+
+
+def test_second_ctrl_c_stops_running_agents_now(make_office, monkeypatch):
+    office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
+    office.cfg.poll_seconds = 1
+    monkeypatch.setattr(orchestrator, "run_agent", orchestrator.run_agent)
+    elapsed = run_with_signals(office, gh, signals=2, agent_seconds=30)
+    assert elapsed < 15  # the 30s agent was ended
+    assert not any(FAILED_MARK in c.body for c in gh.issues[1].comments)  # not a failure
+    assert L.IN_PROGRESS in gh.issues[1].labels  # released at the next start
