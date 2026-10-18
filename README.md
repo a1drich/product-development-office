@@ -170,3 +170,7 @@ Similar projects this design borrows from:
 - **Runs on:** a local machine, as a long-running process. No server and no GitHub Actions.
 - **Merging:** agents merge PRs themselves, but only after the change has been fully tested locally: the full test suite passes and the Codex tester has verified the acceptance criteria. CI must also pass when the target repo has CI.
 - **Design deliverables:** prompts and design documents (markdown) only. No Figma, no image mockups.
+
+## License
+
+[MIT](LICENSE)
