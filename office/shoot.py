@@ -1,5 +1,9 @@
 """`office shoot`: screenshots and UX checks of a running app, driven by docs/manual/pages.json.
 
+This is the fallback for repos without their own screenshot command. A repo's own
+`make screenshots` is preferred, since setting up states such as "empty" or "validation
+error" needs knowledge of the app. Fields this runner doesn't know are ignored.
+
 The target repo lists the pages of its user manual in `docs/manual/pages.json`:
 
     {

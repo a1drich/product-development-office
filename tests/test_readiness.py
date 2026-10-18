@@ -17,7 +17,7 @@ def test_empty_repo_fails(tmp_path):
 def test_ready_repo_passes(tmp_path):
     (tmp_path / "AGENTS.md").write_text("# brief")
     (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\n@AGENTS.md\n")
-    (tmp_path / "Makefile").write_text("lint:\n\techo\n\nverify: lint\n")
+    (tmp_path / "Makefile").write_text("lint:\n\techo\n\nverify: lint\n\nscreenshots:\n\techo\n")
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "decisions.md").write_text("x")
     (tmp_path / "PRODUCT.md").write_text("x")

@@ -16,6 +16,7 @@ uv run pytest -k blocker                 # tests matching a name
 uv run office check owner/name           # readiness check (read-only)
 uv run office start owner/name --dry-run # print the plan, change nothing
 uv run office docs serve owner/name      # browse a target's docs site
+uv run office plan owner/name            # what happens next (read-only)
 uv run playwright install chromium       # once, for office shoot and its tests
 ```
 

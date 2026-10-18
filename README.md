@@ -99,6 +99,7 @@ Startup steps:
 | `office check [repo] [--run-verify] [--file-issues]` | Checks a repo against the [integration checklist](docs/INTEGRATION.md). `--run-verify` also runs its verify command on a fresh clone. `--file-issues` files one `status:triage` issue per gap, so fixing readiness becomes the office's first work. |
 | `office labels [repo]` | Creates the office labels |
 | `office shoot --base-url URL` | Run in a target repo with its app running: screenshots every page in `docs/manual/pages.json` at desktop and mobile width, and reports UX problems |
+| `office plan [repo]` | Shows every open issue's status, priority and what happens next, in the order the office would take them. Read-only, so it's safe to run while the office is running. |
 | `office clean [repo] [--github] [--yes]` | Removes a project's local folders and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
@@ -144,6 +145,7 @@ uv run office clean owner/name --github   # also the labels, office branches and
    - the **"Office status" issue** lists everything waiting on you
    - the **docs site** at `http://127.0.0.1:8787` shows the current product, with screenshots
    - **GitHub notifications** show progress comments, PRs, and the changed screens after each merge
+   - **`office plan owner/name`** shows, in a second terminal, what every open issue is waiting for
 4. **Answer what's waiting:** blockers and practice suggestions, each in under a minute (see below).
 5. **Stop it** with Ctrl-C whenever you like. `office start` resumes where it left off.
 
@@ -184,6 +186,7 @@ What happens next, all visible as comments on the issue:
 | Pause one issue | Add `blocked:human`; remove it to resume. |
 | Change what an issue asks for | Edit the issue or add a comment. Each role reads the issue and its comments when it starts its step, so the change applies from the next step on. |
 | Make something urgent | Add `priority:p0`. |
+| See what happens next | `uv run office plan owner/name`, in another terminal. It's read-only. |
 | Re-do a step | Set the status label back, for example to `status:ready` to rebuild, or `status:triage` to re-scope. |
 
 ## How work flows
@@ -261,7 +264,7 @@ Every target repo delivers an MkDocs site, and its centerpiece is the **user man
   - Engineers update the manual, `docs/manual/pages.json` and any other docs pages they make stale, in the same PR as the code.
   - The tester fails a PR whose manual is missing or wrong, or whose `mkdocs build --strict` fails.
 - **Always live:** while `office start` runs, it serves the site from the target's main clone at `http://127.0.0.1:8787`, and refreshes the clone after every merge. MkDocs live-reloads, so the site always shows the latest manual and screenshots. If the server dies, the office restarts it. `office docs serve owner/name` serves it on its own.
-- **Screenshots on PRs:** for UI changes, the tester runs `office shoot`, which uses Playwright to capture every page in `pages.json` at 1280px and 360px. It also checks objectively for failed loads, console errors, failed requests, missing expected text, sideways scrolling on a phone and images without alt text. The tester commits the screenshots to the PR, where GitHub shows image diffs. Before merging, the office posts the changed screens on the PR. After merging, it posts them on the "Office status" issue for you to review.
+- **Screenshots on PRs:** for UI changes, the tester captures every page in `pages.json` at 1280px and 360px. It uses the repo's own `make screenshots` when there is one, because setting up states such as "empty" needs knowledge of the app, and keeps the repo able to regenerate its manual without the office. Otherwise it falls back to `office shoot`, which uses Playwright. It also checks objectively for failed loads, console errors, failed requests, missing expected text, sideways scrolling on a phone and images without alt text. The tester commits the screenshots to the PR, where GitHub shows image diffs. Before merging, the office posts the changed screens on the PR. After merging, it posts them on the "Office status" issue for you to review.
 
 ### Practice suggestions
 

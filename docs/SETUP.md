@@ -96,7 +96,7 @@ Makefile             every command an agent needs
 `docs/` is an [MkDocs](https://www.mkdocs.org/) site (`mkdocs.yml`, Material theme), and it is delivered with every change:
 
 - `docs/manual/README.md` is the user manual and feature catalog: one section per feature or page, with desktop and mobile screenshots from `docs/manual/screenshots/`. The owner reviews the product through it.
-- `docs/manual/pages.json` lists the pages that `office shoot` screenshots and UX-checks.
+- `docs/manual/pages.json` lists the pages to screenshot. `make screenshots` captures them, with each page's state set up. `office shoot` is the fallback for repos without that command.
 - `uvx --with mkdocs-material mkdocs build --strict` must pass. Add it to `make verify` so broken links and pages missing from the nav fail the build.
 - While the office runs, the site is served live at `http://127.0.0.1:8787` from the target's main clone, and refreshed after every merge. `office docs serve owner/name` serves it on its own.
 

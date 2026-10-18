@@ -135,6 +135,17 @@ def check_files(root: Path) -> list[Finding]:
             "use it, desktop and mobile screenshots from docs/manual/screenshots/).",
         ))
 
+    makefile = root / "Makefile"
+    if makefile.exists() and re.search(r"^screenshots\s*:", makefile.read_text(), re.M):
+        out.append(Finding("screenshots", PASS, "screenshot command: `make screenshots`"))
+    else:
+        out.append(Finding(
+            "screenshots", WARN, "no `make screenshots` command",
+            "Add a `make screenshots` target that seeds each manual page's state and captures it "
+            "at desktop and mobile widths. Without one, testers fall back to `office shoot`, "
+            "which can only open plain URLs.",
+        ))
+
     if (root / "docs" / "manual" / "pages.json").exists():
         out.append(Finding("pages", PASS, "screenshot pages: docs/manual/pages.json"))
     else:

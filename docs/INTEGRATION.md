@@ -163,7 +163,7 @@ Lists your notes, newest first. Tap a note to open it.
 {"pages": [{"name": "home", "path": "/", "expect": "Notes"}]}
 ```
 
-Then capture the first screenshots with the app running, and make the docs build part of the verify command:
+Add a `make screenshots` target that seeds each page's state and captures it at desktop and mobile widths. Testers prefer it. Without one, they fall back to `office shoot`, which can only open plain URLs. Then capture the first screenshots with the app running, and make the docs build part of the verify command:
 
 ```bash
 uv run --project /path/to/product-development-office office shoot --base-url http://127.0.0.1:8000

@@ -133,6 +133,21 @@ def cmd_shoot(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if failed else 0
 
 
+def cmd_plan(args: argparse.Namespace, cfg: Config) -> int:
+    from datetime import UTC, datetime, timedelta
+
+    from office import plan
+
+    repo = args.repo or cfg.repo
+    if not repo or not REPO_RE.match(repo):
+        sys.exit("which repo? `office plan owner/name`")
+    rows = plan.describe(GitHub(repo).open_issues(), datetime.now(UTC),
+                         timedelta(minutes=cfg.claim_ttl_minutes))
+    print(f"{repo}\n")
+    print(plan.render(rows, cfg.limits))
+    return 0
+
+
 def cmd_clean(args: argparse.Namespace, cfg: Config) -> int:
     from office import clean
 
@@ -227,6 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pages", default="docs/manual/pages.json")
     p.add_argument("--out", default="docs/manual/screenshots")
     p.set_defaults(fn=cmd_shoot)
+
+    p = sub.add_parser("plan", help="show what the office would do next (read-only; safe while "
+                                    "the office runs)")
+    p.add_argument("repo", nargs="?")
+    p.set_defaults(fn=cmd_plan)
 
     p = sub.add_parser("clean", help="remove a project's local state (and, optionally, "
                                      "the office's labels, branches and status issue on GitHub)")
