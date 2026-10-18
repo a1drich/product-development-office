@@ -242,10 +242,17 @@ While the office runs:
 
 ## Removing the office
 
-Stop the process and delete the labels. Nothing else in the repo depends on it: the brief, the verify command and the docs are useful on their own.
+Stop the process, then delete the labels, any leftover `office/issue-*` branches and the "Office status" issue. Nothing else in the repo depends on the office: the brief, the verify command, the docs site and the user manual are useful on their own. For the local cleanup, see [Switching projects and cleaning up](../README.md#switching-projects-and-cleaning-up).
 
 ```bash
 for l in $(gh label list --repo "$REPO" --json name --jq '.[].name | select(startswith("status:") or startswith("priority:") or startswith("office:") or . == "blocked:human")'); do
   gh label delete "$l" --repo "$REPO" --yes
 done
+
+# branches of PRs that never merged
+git ls-remote --heads "https://github.com/$REPO" 'office/issue-*' | awk '{print $2}' |
+  sed 's#refs/heads/##' | xargs -I{} gh api -X DELETE "repos/$REPO/git/refs/heads/{}"
+
+# the status issue
+gh issue close "$(gh issue list --repo "$REPO" --label office:status --json number --jq '.[0].number')" --repo "$REPO"
 ```

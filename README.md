@@ -98,7 +98,29 @@ Startup steps:
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 
-Settings such as concurrency per role, poll intervals and the claim timeout can be overridden in `.office/config.json`. The defaults are in `office/config.py`.
+Settings such as concurrency per role (`limits`), poll intervals and the claim timeout can be overridden in `.office/config.json`. The defaults are in `office/config.py`. The config is read at startup, so changes apply from the next `office start`.
+
+### Switching projects and cleaning up
+
+To move to another project, run `office start owner/other-repo`. The new repo replaces the saved one in `.office/config.json`, and it gets its own folder under `workspace/`. Nothing carries over, because each project's state lives in its own GitHub issues.
+
+What the office keeps locally, all gitignored:
+
+| Path | What |
+|---|---|
+| `.office/config.json` | The saved repo and your setting overrides |
+| `workspace/<repo>/` | The main clone of the target |
+| `workspace/<repo>-worktrees/` | One worktree per issue being worked on |
+| `workspace/<repo>-mkdocs.log` | The live docs server's log |
+
+To clear out a project you're done with, stop the office, then:
+
+```bash
+rm -rf workspace/<repo> workspace/<repo>-worktrees workspace/<repo>-mkdocs.log
+rm .office/config.json   # or delete just its "repo" line to keep your settings
+```
+
+Local folders are named after the repo alone, so two projects with the same repo name under different owners would share a folder. Clean one up before starting the other. To remove the office from the GitHub repo itself, see [Removing the office](docs/INTEGRATION.md#removing-the-office).
 
 ### Prerequisites
 
