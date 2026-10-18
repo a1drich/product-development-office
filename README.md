@@ -2,7 +2,11 @@
 
 An autonomous agent swarm that works like an outsourced product development office. Point it at a GitHub repository and a team of AI agents (a product manager, a designer, engineers, reviewers and testers) plans, builds, reviews and tests the product. It keeps going until every remaining piece of work is waiting on a human decision.
 
-> **Status:** early. The orchestrator, all five roles, `office check` and `office start` are built and unit tested. Each agent CLI has been smoke-tested on its own, but the full loop has not yet run end to end on a live repo, so watch the first runs closely.
+## Goal
+
+**Let one person run a business with the output of a whole product and development team.** The owner does what only an owner can: sets direction, makes product and business decisions, approves suggestions and reviews the product through its user manual. The office does everything else: planning, design, engineering, code review, testing, documentation and keeping the repo healthy. Every design choice here serves that: work runs without supervision, anything that needs the owner arrives as a short decision that can be answered in under a minute, and the docs site shows what was built without reading code.
+
+> **Status:** early. The orchestrator, all five roles, `office check` and `office start` are built and unit tested, and the full loop has run end to end on a sandbox repo: triage, design, implementation, cross-model review, screenshot testing, merges, blockers, dependencies and practice suggestions. It hasn't run on a production project yet, so watch the first runs closely.
 
 ## Target stack
 

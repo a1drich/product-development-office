@@ -4,7 +4,7 @@ Guidance for every coding agent working on this repo. Codex reads this file dire
 
 ## Current state
 
-Early. The orchestrator, the five roles, `office check` and `office start` are built and unit tested. Each agent CLI has been smoke-tested, but the full loop hasn't run end to end on a live repo yet. `README.md` is the spec and documents the architecture. `docs/SETUP.md` covers the office machine, target-repo conventions and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo.
+Early. The orchestrator, the five roles, `office check` and `office start` are built and unit tested. The full loop has run end to end on a sandbox repo, but not on a production project yet. The project's goal is in the README: one person running a business with the output of a whole product and development team. `README.md` is the spec and documents the architecture. `docs/SETUP.md` covers the office machine, target-repo conventions and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo.
 
 ## Commands
 
