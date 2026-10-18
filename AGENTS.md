@@ -82,7 +82,7 @@ Two contexts are maintained separately, and neither leaks into the other:
 | What | How the office works: roles, labels, verdicts, prompts, config | How the product works and how to work in it |
 | Where | This repo: `README.md`, `AGENTS.md`, `docs/`, `office/prompts/` | The target repo: its `AGENTS.md`, `docs/`, `PRODUCT.md`, `DESIGN.md` |
 | Maintained by | Changes to this repo, under the drift rules below | The office's agents, in the same PR as the change (`office/prompts/_context.md`) |
-| Local state | `.office/config.json` | `workspace/<repo>/` and its worktrees |
+| Local state | `.office/config.json` | `workspace/<owner>__<repo>/`, its worktrees and docs log (`office clean` removes them) |
 
 - **Nothing target-specific goes into this repo:** no repo names, domains, quirks or findings from a target. Use `example.com` and `owner/name` placeholders. Something learned about a target belongs in the target repo, as a fix in a PR or a practice issue.
 - **Nothing office-specific goes into a target's files.** Agents may mention the office in issue and PR comments, but a target's code and docs must make sense to a team that has never heard of the office. `_context.md` tells every agent this.

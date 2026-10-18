@@ -62,7 +62,7 @@ class Office:
         self.last_summary = ""
         self.status_issue: int | None = None
         self.stopping = threading.Event()
-        self.docs = DocsServer(ws.clone, cfg.docs_port)
+        self.docs = DocsServer(ws.clone, cfg.docs_port, ws.docs_log)
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
 

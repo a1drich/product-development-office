@@ -242,7 +242,7 @@ While the office runs:
 
 ## Removing the office
 
-Stop the process, then delete the labels, any leftover `office/issue-*` branches and the "Office status" issue. Nothing else in the repo depends on the office: the brief, the verify command, the docs site and the user manual are useful on their own. For the local cleanup, see [Switching projects and cleaning up](../README.md#switching-projects-and-cleaning-up).
+Stop the process, then run `uv run office clean owner/name --github`. It shows its plan and asks before deleting the office's labels, the `office/issue-*` branches that have no open PR, and the "Office status" issue, and then removes the local folders. The manual equivalent is below. Nothing else in the repo depends on the office: the brief, the verify command, the docs site and the user manual are useful on their own. For the local cleanup, see [Switching projects and cleaning up](../README.md#switching-projects-and-cleaning-up).
 
 ```bash
 for l in $(gh label list --repo "$REPO" --json name --jq '.[].name | select(startswith("status:") or startswith("priority:") or startswith("office:") or . == "blocked:human")'); do

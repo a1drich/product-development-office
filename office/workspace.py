@@ -17,13 +17,57 @@ from office.shell import CommandError, Result, run
 LOCK_ERRORS = ("cannot lock ref", "index.lock", "Unable to create", "unable to update local ref")
 
 
+def folder_name(repo: str) -> str:
+    """`owner__repo`, so repos with the same name under different owners never collide."""
+    owner, name = repo.split("/", 1)
+    return f"{owner}__{name}"
+
+
 class Workspace:
     def __init__(self, repo: str, root: Path = WORKSPACE):
         self.repo = repo
-        name = repo.split("/")[-1]
+        self.root = root
+        name = folder_name(repo)
         self.clone = root / name
         self.worktrees = root / f"{name}-worktrees"
+        self.docs_log = root / f"{name}-mkdocs.log"
         self.lock = threading.RLock()
+
+    @property
+    def paths(self) -> list[Path]:
+        return [self.clone, self.worktrees, self.docs_log]
+
+    def migrate_legacy(self) -> bool:
+        """Moves a folder from the old `workspace/<repo>` layout to `<owner>__<repo>`, if
+        its origin is this repo. Worktrees are moved too, and repaired, so work in them
+        is kept."""
+        legacy_name = self.repo.split("/", 1)[1]
+        legacy = self.root / legacy_name
+        if self.clone.exists() or not (legacy / ".git").exists():
+            return False
+        origin = run(["git", "remote", "get-url", "origin"], cwd=legacy, check=False).stdout
+        if not origin.strip().removesuffix(".git").endswith(self.repo):
+            return False
+        from office.agents import leftover_pids
+
+        legacy_trees = self.root / f"{legacy_name}-worktrees"
+        busy = leftover_pids(legacy) | (leftover_pids(legacy_trees) if legacy_trees.exists()
+                                        else set())
+        if busy:
+            raise RuntimeError(
+                f"{legacy} is still in use (pids {', '.join(map(str, sorted(busy)))}); stop the "
+                "office before it moves the folder to the new layout"
+            )
+        legacy.rename(self.clone)
+        if legacy_trees.exists():
+            legacy_trees.rename(self.worktrees)
+            trees = [str(p) for p in self.worktrees.iterdir() if p.is_dir()]
+            if trees:
+                self.git("worktree", "repair", *trees, check=False)
+        legacy_log = self.root / f"{legacy_name}-mkdocs.log"
+        if legacy_log.exists():
+            legacy_log.rename(self.docs_log)
+        return True
 
     def git(self, *args: str, cwd: Path | None = None, check: bool = True) -> Result:
         for attempt in range(4):
@@ -37,6 +81,7 @@ class Workspace:
         return res
 
     def ensure_clone(self) -> Path:
+        self.migrate_legacy()
         if not (self.clone / ".git").exists():
             self.clone.parent.mkdir(parents=True, exist_ok=True)
             run(["gh", "repo", "clone", self.repo, str(self.clone)])

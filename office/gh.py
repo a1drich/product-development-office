@@ -99,6 +99,22 @@ class GitHub:
                 created.append(label.name)
         return created
 
+    def delete_label(self, name: str) -> None:
+        self._gh("label", "delete", name, "--yes")
+
+    def office_branches(self) -> list[str]:
+        refs = json.loads(run(["gh", "api",
+                               f"repos/{self.repo}/git/matching-refs/heads/office/issue-"]).stdout)
+        return [r["ref"].removeprefix("refs/heads/") for r in refs]
+
+    def open_pr_branches(self) -> set[str]:
+        data = self._gh_json("pr", "list", "--state", "open", "--limit", "500",
+                             "--json", "headRefName")
+        return {d["headRefName"] for d in data}
+
+    def delete_branch(self, branch: str) -> None:
+        run(["gh", "api", "-X", "DELETE", f"repos/{self.repo}/git/refs/heads/{branch}"])
+
     # --- issues -----------------------------------------------------------------
 
     def open_issues(self) -> list[Issue]:

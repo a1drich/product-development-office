@@ -81,6 +81,7 @@ class FakeGitHub:
 class FakeWorkspace:
     def __init__(self, tmp_path):
         self.clone = tmp_path
+        self.docs_log = tmp_path / "mkdocs.log"
 
     def default_branch(self):
         return "main"

@@ -75,7 +75,7 @@ $ uv run office start
 ✓ gh: logged in
 ✓ claude: logged in (max)
 ✓ codex: logged in (ChatGPT)
-✓ cloned acme/widget-app into workspace/widget-app
+✓ cloned acme/widget-app into workspace/acme__widget-app
 ✓ labels ready (14 created)
 → verify command: make verify
 12:00:01 starting triage on #12 (pm)
@@ -99,6 +99,7 @@ Startup steps:
 | `office check [repo] [--run-verify] [--file-issues]` | Checks a repo against the [integration checklist](docs/INTEGRATION.md). `--run-verify` also runs its verify command on a fresh clone. `--file-issues` files one `status:triage` issue per gap, so fixing readiness becomes the office's first work. |
 | `office labels [repo]` | Creates the office labels |
 | `office shoot --base-url URL` | Run in a target repo with its app running: screenshots every page in `docs/manual/pages.json` at desktop and mobile width, and reports UX problems |
+| `office clean [repo] [--github] [--yes]` | Removes a project's local folders and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 
@@ -113,18 +114,18 @@ What the office keeps locally, all gitignored:
 | Path | What |
 |---|---|
 | `.office/config.json` | The saved repo and your setting overrides |
-| `workspace/<repo>/` | The main clone of the target |
-| `workspace/<repo>-worktrees/` | One worktree per issue being worked on |
-| `workspace/<repo>-mkdocs.log` | The live docs server's log |
+| `workspace/<owner>__<repo>/` | The main clone of the target |
+| `workspace/<owner>__<repo>-worktrees/` | One worktree per issue being worked on |
+| `workspace/<owner>__<repo>-mkdocs.log` | The live docs server's log |
+
+Folders include the owner, so `acme/web` and `other/web` never collide. Folders from older versions, named after the repo alone, are moved to the new names automatically, worktrees included, the next time the office uses them. A folder still in use by a running office is never moved.
 
 To clear out a project you're done with, stop the office, then:
 
 ```bash
-rm -rf workspace/<repo> workspace/<repo>-worktrees workspace/<repo>-mkdocs.log
-rm .office/config.json   # or delete just its "repo" line to keep your settings
+uv run office clean owner/name            # local folders; forgets the saved repo, keeps settings
+uv run office clean owner/name --github   # also the labels, office branches and status issue
 ```
-
-Local folders are named after the repo alone, so two projects with the same repo name under different owners would share a folder. Clean one up before starting the other. To remove the office from the GitHub repo itself, see [Removing the office](docs/INTEGRATION.md#removing-the-office).
 
 ### Prerequisites
 

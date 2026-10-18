@@ -133,6 +133,45 @@ def cmd_shoot(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if failed else 0
 
 
+def cmd_clean(args: argparse.Namespace, cfg: Config) -> int:
+    from office import clean
+
+    repo = args.repo or cfg.repo
+    if not repo or not REPO_RE.match(repo):
+        sys.exit("which repo? `office clean owner/name`")
+    ws = Workspace(repo)
+    ws.migrate_legacy()
+    busy = clean.running_in(ws)
+    if busy:
+        print(f"✗ the office or its agents are still running in {repo}'s folders "
+              f"(pids {', '.join(map(str, sorted(busy)))}). Stop them first.")
+        return 1
+
+    if args.github:
+        gh = GitHub(repo)
+        plan = clean.plan_github(gh)
+        print(f"On GitHub ({repo}):")
+        print(f"  delete {len(plan.labels)} office labels")
+        print(f"  delete {len(plan.branches)} office branches without an open PR")
+        for b in plan.kept_branches:
+            print(f"  keep {b}: it has an open PR (close the PR first to remove it)")
+        if plan.status_issue:
+            print(f"  close the status issue #{plan.status_issue}")
+        if not plan.empty:
+            if not args.yes and input("Proceed? [y/N] ").strip().lower() != "y":
+                print("nothing changed")
+                return 1
+            clean.clean_github(gh, plan)
+            print("✓ GitHub cleaned")
+
+    removed = clean.clean_local(ws, cfg)
+    for r in removed:
+        print(f"✓ removed {r}")
+    if not removed:
+        print(f"nothing local to remove for {repo}")
+    return 0
+
+
 MKDOCS = ["uvx", "--with", "mkdocs-material", "mkdocs"]
 
 
@@ -189,6 +228,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="docs/manual/screenshots")
     p.set_defaults(fn=cmd_shoot)
 
+    p = sub.add_parser("clean", help="remove a project's local state (and, optionally, "
+                                     "the office's labels, branches and status issue on GitHub)")
+    p.add_argument("repo", nargs="?")
+    p.add_argument("--github", action="store_true",
+                   help="also remove the office's labels, branches and status issue on GitHub")
+    p.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    p.set_defaults(fn=cmd_clean)
+
     p = sub.add_parser("docs", help="build or serve a target repo's MkDocs site")
     p.add_argument("action", choices=["build", "serve"])
     p.add_argument("repo", nargs="?")
@@ -203,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         return args.fn(args, Config.load())
-    except CommandError as e:
+    except (CommandError, RuntimeError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 

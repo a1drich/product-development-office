@@ -19,11 +19,11 @@ MKDOCS = ["uvx", "--with", "mkdocs-material", "mkdocs"]
 
 
 class DocsServer:
-    def __init__(self, clone: Path, port: int):
+    def __init__(self, clone: Path, port: int, log_path: Path):
         self.clone = clone
         self.port = port
         self.proc: subprocess.Popen | None = None
-        self.log_path = clone.parent / f"{clone.name}-mkdocs.log"
+        self.log_path = log_path
 
     @property
     def url(self) -> str:
