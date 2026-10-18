@@ -116,10 +116,12 @@ def plan(
     paused: set[str],
     now: datetime,
     claim_ttl: timedelta,
+    held: frozenset[str] = frozenset(),
 ) -> list[Task]:
     """Tasks to start now, most urgent first, within each role's concurrency limit.
 
-    `running` maps issue number -> role for agents already working.
+    `running` maps issue number -> role for agents already working. Task kinds in `held`
+    are not started this pass.
     """
     busy: dict[str, int] = {}
     for role in running.values():
@@ -131,7 +133,7 @@ def plan(
         if issue.number in running:
             continue
         task = task_for(issue, now, claim_ttl, open_numbers)
-        if task is None:
+        if task is None or task.kind in held:
             continue
         candidates.append(task)
 

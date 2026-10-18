@@ -57,7 +57,8 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
   2. Check `gh`, `claude` and `codex` auth.
   3. Clone the target repo.
   4. Create any missing labels.
-  5. Start the loop.
+  5. If the impeccable skill isn't committed, file the "Add the impeccable design skill" issue (`status:ready`, `priority:p0`). An engineer adds it in a reviewed PR, and design waits until that issue closes.
+  6. Start the loop.
 - **Stop condition:** the office idles and posts a summary of open blockers when no issue can be acted on.
 - **Engineers work in isolation.** Each one gets its own git worktree of the target repo.
 - **The docs site is part of every delivery.** The target's MkDocs site and its user manual at `docs/manual/` are updated in the same PR as each user-visible change, screenshots come from `office shoot`, and `mkdocs build --strict` must pass. `office start` serves the site live from the main clone.

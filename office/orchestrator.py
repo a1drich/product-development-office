@@ -38,6 +38,21 @@ def format_comments(issue: Issue, limit: int = 30) -> str:
     return "\n\n".join(f"**@{c.author}** ({c.created_at:%Y-%m-%d %H:%M}):\n{c.body}" for c in shown)
 
 
+IMPECCABLE_BODY = f"""\
+The Designer plans UI work with the [impeccable](https://github.com/pbakaus/impeccable) design \
+skill, engineers use it for UI changes, and the tester runs its `detect` command. It isn't \
+committed to this repo yet, and agents work from fresh clones, so it has to be.
+
+## Acceptance criteria
+- [ ] `npx skills add pbakaus/impeccable` has been run at the repo root.
+- [ ] The installed skill (`{readiness.IMPECCABLE_DIRS[0]}` and/or \
+`{readiness.IMPECCABLE_DIRS[1]}`) is committed. Nothing else changes.
+- [ ] The verify command passes.
+
+Design work waits until this issue closes.
+{mark("setup")}"""
+
+
 def blocker_body(blocker: dict, blocks: list[int]) -> str:
     options = "\n".join(f"{i}. {opt}" for i, opt in enumerate(blocker.get("options") or [], 1))
     return (
@@ -79,6 +94,8 @@ class Office:
         """One planning pass. Starts tasks and returns them."""
         now = datetime.now(UTC)
         issues = self.gh.open_issues()
+        # Design needs impeccable, so it waits while the setup issue is open.
+        setup_open = any(i.title == readiness.IMPECCABLE_TITLE for i in issues)
         tasks = planner.plan(
             issues,
             self.running,
@@ -86,6 +103,7 @@ class Office:
             self.paused(now),
             now,
             timedelta(minutes=self.cfg.claim_ttl_minutes),
+            held=frozenset({"design"}) if setup_open else frozenset(),
         )
         practices = self.practices_task(issues, tasks, now)
         if practices:
@@ -116,8 +134,9 @@ class Office:
         if number in self.running:
             return None
         if self.last_practices is None:
-            marks = [c.created_at for c in self.gh.issue(number).comments
-                     if mark("practices") in c.body]
+            # A dry run on a repo with no status issue yet has number 0: never reviewed.
+            comments = self.gh.issue(number).comments if number else []
+            marks = [c.created_at for c in comments if mark("practices") in c.body]
             self.last_practices = max(marks) if marks else datetime.min.replace(tzinfo=UTC)
         if now - self.last_practices < timedelta(hours=self.cfg.practices_interval_hours):
             return None
@@ -165,6 +184,7 @@ class Office:
 
     def run(self, exit_when_idle: bool = False) -> None:
         if self.dry_run:
+            self.bootstrap()
             with ThreadPoolExecutor(max_workers=1) as pool:
                 self.pool = pool
                 self.loop(exit_when_idle)
@@ -177,6 +197,7 @@ class Office:
                 self.pool = pool
                 try:
                     self.recover_claims()
+                    self.bootstrap()
                     self.loop(exit_when_idle)
                 finally:
                     pool.shutdown(wait=True, cancel_futures=True)
@@ -213,6 +234,21 @@ class Office:
                 self.gh.comment(issue.number, "The office restarted; releasing the previous "
                                               f"claim.\n{mark('release')}")
                 log.info("#%s: released a claim left over from the last run", issue.number)
+
+    def bootstrap(self) -> None:
+        """Every target needs impeccable before design work. If the clone doesn't have it,
+        file a ready, p0 issue so an engineer adds it in a PR that is reviewed and tested
+        like any other change. The office never commits to the target itself."""
+        if readiness.impeccable_installed(self.ws.clone):
+            return
+        if self.gh.find_issue_by_title(readiness.IMPECCABLE_TITLE):
+            return
+        if self.dry_run:
+            log.info("would file %r (impeccable isn't committed)", readiness.IMPECCABLE_TITLE)
+            return
+        n = self.gh.create_issue(readiness.IMPECCABLE_TITLE, IMPECCABLE_BODY,
+                                 [L.READY, "priority:p0"])
+        log.info("filed #%s: %s", n, readiness.IMPECCABLE_TITLE)
 
     def loop(self, exit_when_idle: bool) -> None:
         while True:

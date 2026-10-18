@@ -85,6 +85,13 @@ def test_paused_roles_get_no_work_but_housekeeping_still_runs():
     assert [(t.kind, t.issue) for t in tasks] == [("close_done", 2)]
 
 
+def test_held_kinds_are_not_started():
+    issues = [issue(1, L.DESIGN, "priority:p0"), issue(2, L.READY)]
+    tasks = plan(issues, running={}, limits=LIMITS, paused=set(), now=NOW, claim_ttl=TTL,
+                 held=frozenset({"design"}))
+    assert [(t.kind, t.issue) for t in tasks] == [("implement", 2)]
+
+
 def test_failures_count_since_last_progress():
     i = issue(1, L.READY, comments=[
         comment("<!-- office:advance -->"),

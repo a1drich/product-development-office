@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from office import labels as L
-from office import orchestrator
+from office import orchestrator, readiness
 from office.agents import AgentResult, Verdict
 from office.config import Config
 from office.gh import Comment, Issue
@@ -104,7 +104,9 @@ class FakeWorkspace:
 
 @pytest.fixture
 def make_office(tmp_path, monkeypatch):
-    def make(issues, verdicts):
+    def make(issues, verdicts, impeccable=True):
+        if impeccable:
+            (tmp_path / ".claude" / "skills" / "impeccable").mkdir(parents=True, exist_ok=True)
         gh = FakeGitHub(issues)
         office = orchestrator.Office(Config(), gh, FakeWorkspace(tmp_path))
         queue = list(verdicts)
@@ -334,6 +336,52 @@ def test_restart_releases_leftover_claims(make_office):
     office.recover_claims()
     assert L.READY in gh.issues[1].labels and L.IN_PROGRESS not in gh.issues[1].labels
     assert gh.issues[2].comments == []
+
+
+def test_bootstrap_files_the_impeccable_setup_issue_once(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.TRIAGE})], [], impeccable=False)
+    office.bootstrap()
+    office.bootstrap()
+    filed = [i for i in gh.issues.values() if i.title == readiness.IMPECCABLE_TITLE]
+    assert len(filed) == 1
+    assert filed[0].labels == {L.READY, "priority:p0"}
+    assert "npx skills add pbakaus/impeccable" in filed[0].body
+
+
+def test_bootstrap_skips_a_repo_that_has_impeccable(make_office, tmp_path):
+    (tmp_path / ".agents" / "skills" / "impeccable").mkdir(parents=True)
+    office, gh = make_office([Issue(1, "x", "", {L.TRIAGE})], [], impeccable=False)
+    office.bootstrap()
+    assert list(gh.issues) == [1]
+
+
+def test_bootstrap_in_a_dry_run_files_nothing(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.TRIAGE})], [], impeccable=False)
+    office.dry_run = True
+    office.bootstrap()
+    assert list(gh.issues) == [1]
+
+
+def test_design_waits_while_the_impeccable_setup_issue_is_open(make_office, monkeypatch):
+    office, gh = make_office([Issue(1, "x", "", {L.DESIGN}),
+                              Issue(2, readiness.IMPECCABLE_TITLE, "", {L.READY})], [])
+    started = []
+    monkeypatch.setattr(office, "start", started.append)
+    monkeypatch.setattr(office, "practices_task", lambda *a: None)
+    office.cycle()
+    assert [(t.kind, t.issue) for t in started] == [("implement", 2)]
+    gh.close_issue(2)
+    started.clear()
+    office.cycle()
+    assert [(t.kind, t.issue) for t in started] == [("design", 1)]
+
+
+def test_dry_run_without_a_status_issue_plans_without_touching_github(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
+    office.dry_run = True
+    tasks = office.cycle()
+    assert ("implement", 1) in [(t.kind, t.issue) for t in tasks]
+    assert list(gh.issues) == [1]
 
 
 def test_runs_interrupted_by_shutdown_are_not_failures(make_office):

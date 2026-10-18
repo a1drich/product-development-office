@@ -117,7 +117,7 @@ If the frontend uses design tokens, a script that flags raw colors outside the t
 
 ### Install impeccable
 
-The Designer plans UI work with the [impeccable](https://github.com/pbakaus/impeccable) design skill, engineers use it for UI changes, and the tester runs its detector. Install it at the repo root and **commit** the result, because the agents work from fresh clones:
+The Designer plans UI work with the [impeccable](https://github.com/pbakaus/impeccable) design skill, engineers use it for UI changes, and the tester runs its detector. It must be **committed**, because the agents work from fresh clones. If it's missing, `office start` files an "Add the impeccable design skill" issue as its first task, an engineer adds it in a PR, and design waits until that lands. To do it yourself instead:
 
 ```bash
 npx skills add pbakaus/impeccable

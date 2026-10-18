@@ -145,7 +145,7 @@ make ui-check  # optional: headless smoke test of the running app at phone width
 ### GitHub
 
 - Turn on Issues. The office creates its labels on first run.
-- Commit the [impeccable](https://github.com/pbakaus/impeccable) design skill (`npx skills add pbakaus/impeccable`), so every agent's fresh clone has it.
+- Commit the [impeccable](https://github.com/pbakaus/impeccable) design skill (`npx skills add pbakaus/impeccable`), so every agent's fresh clone has it. If you don't, `office start` files it as the office's first task.
 - Add CI (`.github/workflows/ci.yml`) that runs the same checks as `make verify` on pull requests. The tester waits for it before merging.
 - Protect `main` from force-pushes. Agents merge PRs, but only through `gh pr merge`.
 

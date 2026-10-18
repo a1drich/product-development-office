@@ -42,7 +42,9 @@ Startup steps:
 2. Check that no API key is set, and that `gh`, `claude` (subscription login) and `codex` (ChatGPT login) are logged in. Startup refuses to continue otherwise.
 3. Clone the repo into `workspace/`, which this project's git history doesn't track.
 4. Create any missing office labels on the target repo.
-5. Release any `status:in-progress` claims left over from a previous run (a fresh office has no agents running), then hand control to the orchestrator loop.
+5. Release any `status:in-progress` claims left over from a previous run (a fresh office has no agents running).
+6. If the [impeccable](https://github.com/pbakaus/impeccable) design skill isn't committed to the repo, file an "Add the impeccable design skill" issue labelled `status:ready` and `priority:p0`, unless one is already open. An engineer installs and commits it in a PR that is reviewed and tested like any other, and design work waits until the issue closes. The office never commits to the target itself.
+7. Hand control to the orchestrator loop.
 
 ## Stopping and resuming
 

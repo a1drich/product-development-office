@@ -58,3 +58,10 @@ def test_github_checks():
     assert ok == {"issues": PASS, "labels": PASS}
     bad = {f.key: f.level for f in check_github({"hasIssuesEnabled": False}, set())}
     assert bad == {"issues": FAIL, "labels": WARN}
+
+
+def test_missing_impeccable_files_under_the_title_office_start_uses(tmp_path):
+    from office.readiness import IMPECCABLE_TITLE
+    found = {f.key: f for f in check_files(tmp_path)}
+    assert found["impeccable"].issue_title == IMPECCABLE_TITLE
+    assert found["agents-md"].issue_title.startswith("Office readiness: ")

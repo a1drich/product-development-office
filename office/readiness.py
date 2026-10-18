@@ -11,6 +11,11 @@ from office import labels as L
 
 FAIL, WARN, PASS = "fail", "warn", "pass"
 
+# `office start` files this issue when impeccable is missing (see Office.bootstrap), and
+# `office check --file-issues` uses the same title, so the gap is never filed twice.
+IMPECCABLE_TITLE = "Add the impeccable design skill"
+IMPECCABLE_DIRS = (".claude/skills/impeccable", ".agents/skills/impeccable")
+
 
 @dataclass
 class Finding:
@@ -18,10 +23,11 @@ class Finding:
     level: str  # pass | warn | fail
     summary: str
     fix: str = ""
+    title: str = ""
 
     @property
     def issue_title(self) -> str:
-        return f"Office readiness: {self.summary}"
+        return self.title or f"Office readiness: {self.summary}"
 
 
 def _exists(root: Path, *names: str) -> str | None:
@@ -29,6 +35,10 @@ def _exists(root: Path, *names: str) -> str | None:
         if (root / n).exists():
             return n
     return None
+
+
+def impeccable_installed(root: Path) -> str | None:
+    return _exists(root, *IMPECCABLE_DIRS)
 
 
 def verify_command(root: Path) -> str | None:
@@ -107,14 +117,16 @@ def check_files(root: Path) -> list[Finding]:
             "Run impeccable's `document` command to generate DESIGN.md from the existing code.",
         ))
 
-    imp = _exists(root, ".claude/skills/impeccable", ".agents/skills/impeccable")
+    imp = impeccable_installed(root)
     if imp:
         out.append(Finding("impeccable", PASS, f"impeccable installed ({imp})"))
     else:
         out.append(Finding(
             "impeccable", FAIL, "impeccable design skill not installed",
             "Run `npx skills add pbakaus/impeccable` in the repo and commit the result, so the "
-            "Designer and engineers share the same design skill.",
+            "Designer and engineers share the same design skill. `office start` files this as "
+            "its first task.",
+            title=IMPECCABLE_TITLE,
         ))
 
     if (root / "mkdocs.yml").exists():
