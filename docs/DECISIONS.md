@@ -9,6 +9,7 @@ The decisions that shape the office, and the projects it borrows from. Read thes
 - **Delivery includes docs:** every target repo has an MkDocs site with a user manual and feature catalog, kept current in every PR and served live while the office runs.
 - **UI testing:** [Playwright](https://playwright.dev/) screenshots and objective UX checks, posted on PRs.
 - **Design tool:** the [impeccable](https://github.com/pbakaus/impeccable) skill, committed to each target repo. The Designer uses `shape` to plan, engineers use it for UI work, and the tester runs its `detect` command on changed UI files. When a target doesn't have it, `office start` files a p0 setup issue for an engineer rather than committing it directly, so the change is reviewed and tested like any other and the orchestrator never writes to the target.
+- **Stack knowledge lives in stack guides:** one markdown guide per tool in `docs/stack/`, detected per target and pasted into agents' prompts. The office's code and prompts stay stack-neutral, so anyone can add support for their stack by contributing a guide, with no code change.
 
 ## Inspiration
 

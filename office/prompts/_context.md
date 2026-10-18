@@ -5,6 +5,12 @@
 - **Docs are small, single-scope files, all linked.** Each page in `docs/` covers one topic, stated in its first paragraph. When a page grows a second topic, split it into its own page rather than adding a section. Every page is in the `nav` of `mkdocs.yml`, so nothing is orphaned and `{{docs_build}}` catches broken links.
 - **The office's context** is these instructions: roles, labels, verdicts and the office's process. Never write about the office (its labels, roles, verdicts or workflow) into the repo's files, code or docs. The repo must make sense to a human team that has never heard of the office. Issue and PR comments are fine. If an office tool (such as `office shoot`) gets in your way, say so in your verdict's `summary` and work around it. Never file it in `new_issues`, because those go to the repo's backlog.
 
+## This repo's stack
+
+The office keeps one guide per stack it supports, with rules learned across every repo built on it. These apply to this repo, on top of its own `AGENTS.md`. Where they disagree, the repo's `AGENTS.md` wins, and you can suggest aligning them with a `Practice:` issue.
+
+{{stack}}
+
 ## Databases you create
 
 Any database you create for your work, such as a test database, a seeded copy for manual testing or an end-to-end run's database, must have a name starting with `{{db_prefix}}` (also in the `OFFICE_DB_PREFIX` environment variable), for example `{{db_prefix}}test` or `{{db_prefix}}e2e`. Set it through the repo's own overrides (see its `AGENTS.md`, for example a test-database name or database URL variable). If the repo has no such override, say so in your verdict's `summary`. When your run ends, the office drops every database with that prefix, so don't rely on one surviving into a later run. Never drop or change a database you didn't create, and never use the repo's shared development database for destructive work such as reseeding.

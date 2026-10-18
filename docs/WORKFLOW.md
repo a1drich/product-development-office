@@ -70,7 +70,7 @@ If an agent fails on the same issue three times in a row, for example by crashin
 
 The office keeps suggesting better practices for the target repo:
 
-- **A recurring review.** At most once every 24 hours, while fewer than three practice issues are open, the PM reviews the repo. It looks for drift between `AGENTS.md` and the code, gaps in the verify command, tests and CI, local-development friction, the design system, and fit with the [target stack](../README.md#target-stack). The automated readiness findings feed into it.
+- **A recurring review.** At most once every 24 hours, while fewer than three practice issues are open, the PM reviews the repo. It looks for drift between `AGENTS.md` and the code, gaps in the verify command, tests and CI, local-development friction, the design system, and fit with the [stack guides](stack/README.md) that apply to it. The automated readiness findings feed into it.
 - **While working.** Any agent that notices something the repo should do better can add one `Practice:` issue to its verdict.
 
 Suggestions are filed with `office:practice` and `blocked:human`, so they wait for you and show up in the "Office status" issue. Remove `blocked:human` to have the office do one, or close it to decline. Duplicates are skipped (see [Follow-up issues](#follow-up-issues)). To let the office act on suggestions without asking, set `practices_need_approval` to `false` in `.office/config.json`.

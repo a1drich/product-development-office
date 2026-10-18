@@ -10,7 +10,7 @@ No PR merges until it has passed every step below. A failure at any step sends t
 2. **A merge-conflict check.** Before a review or test, and again just before merging (another PR may have merged while this one was being tested), the office asks GitHub whether the PR merges cleanly. A conflicting PR goes straight back to an engineer, without spending a Codex run, and the conflict isn't counted as a failure.
 3. **Code review (Codex).** A different model from the one that wrote the code reviews the diff for correctness, security, data safety (such as tenancy scoping, migrations and secrets), missing tests, and conformance with the repo's `AGENTS.md`. It posts its findings as a PR comment. The office runs under your GitHub account, which can't approve its own PRs, so the reviewer's verdict (`approve` or `changes`) decides whether the issue moves on.
 4. **Testing (Codex).** The tester checks out the PR in its own worktree and:
-   - merges the latest base branch; a conflict, or a clashing Django migration, is a failure
+   - merges the latest base branch; a conflict, or migrations that clash with the base branch (see the stack guide), is a failure
    - runs the full verify command from a clean state
    - checks every acceptance criterion the way a user would: it starts the stack, seeds demo data, and calls the API or runs the repo's UI smoke check
    - writes missing tests for the criteria and pushes them
@@ -64,6 +64,7 @@ uv run playwright install chromium    # once, before the screenshot tests
 | `tests/test_readiness.py` | The integration checklist |
 | `tests/test_plan.py` | `office plan` output |
 | `tests/test_databases.py` | Finding the target's Postgres from its compose config, per-repo and per-issue prefixes, and the guard against touching any database outside `office_` |
+| `tests/test_stacks.py` | Parsing stack guides, detecting them by file name and contents, and that every guide in `docs/stack/` is valid and listed |
 | `tests/test_shoot.py` | `office shoot` against a real local server and browser |
 
 The tests never call the real `claude`, `codex` or GitHub. Extend the fakes in `tests/test_orchestrator.py` instead.

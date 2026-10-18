@@ -32,17 +32,18 @@ uv run office plan owner/name      # in another terminal: what happens next
 
 Then ask for features by opening issues on the target repo. See [Usage](docs/USAGE.md) for everything else.
 
-## Target stack
+## Supported stacks
 
-The office is optimized for repos built on this stack:
+Everything the office knows about a particular tool lives in that tool's [stack guide](docs/stack/README.md). The office detects which guides apply to a target and gives their rules to every agent, so supporting a new stack means contributing a guide:
 
-- **Backend:** [Django](https://www.djangoproject.com/) + [Django REST Framework](https://www.django-rest-framework.org/), managed with [uv](https://docs.astral.sh/uv/), linted with [ruff](https://docs.astral.sh/ruff/)
-- **Frontends:** [TypeScript](https://www.typescriptlang.org/) web apps ([Nuxt](https://nuxt.com/) or [Next.js](https://nextjs.org/)) with [Tailwind CSS](https://tailwindcss.com/)
-- **Data:** [Postgres](https://www.postgresql.org/) (and [Redis](https://redis.io/) where needed) via [Docker Compose](https://docs.docker.com/compose/)
-- **Local dev:** external services mocked, demo data from a `seed_demo` command
-- **Deployment:** [Docker](https://www.docker.com/) containers on [Hetzner](https://www.hetzner.com/cloud/), behind [Traefik](https://doc.traefik.io/traefik/)
+- **Backend:** [Django](docs/stack/DJANGO.md) + Django REST Framework, with uv and ruff
+- **Frontends:** [Next.js](docs/stack/NEXTJS.md) or [Nuxt](docs/stack/NUXT.md), in TypeScript, styled with [Tailwind CSS](docs/stack/TAILWIND.md)
+- **Data:** [Postgres](docs/stack/POSTGRES.md) (and Redis where needed) via Docker Compose
+- **Deployment:** Docker containers on [Hetzner, behind Traefik](docs/stack/HETZNER-TRAEFIK.md)
 
-It expects these repo conventions (details in the [setup guide](docs/SETUP.md#2-preparing-a-target-repo)):
+The office still works on a repo that matches no guide, relying on the repo's own `AGENTS.md`.
+
+Whatever the stack, it expects these repo conventions (details in the [setup guide](docs/SETUP.md#2-preparing-a-target-repo)):
 
 - `AGENTS.md` (imported by `CLAUDE.md`) and `docs/` describe the product, and every agent reads them first.
 - A single verification command (`make verify` or `npm run verify`) is the definition of done.
@@ -72,7 +73,14 @@ Each document has one scope. Start with **How it works**.
 | [docs/DOCS-SITE.md](docs/DOCS-SITE.md) | The MkDocs site and user manual every target repo delivers |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules, how they fit together, model and billing rules, context separation |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | The decisions behind the design, and the projects it borrows from |
-| [docs/SETUP.md](docs/SETUP.md) | The office machine, target-repo conventions, deploying to Hetzner behind Traefik |
+| [docs/SETUP.md](docs/SETUP.md) | The office machine, and the conventions every target repo follows whatever its stack |
+| [docs/stack/README.md](docs/stack/README.md) | Stack guides: how the office detects and uses them, and how to contribute one |
+| [docs/stack/DJANGO.md](docs/stack/DJANGO.md) | Django + DRF backends: setup and agent rules |
+| [docs/stack/NEXTJS.md](docs/stack/NEXTJS.md) | Next.js frontends: setup and agent rules |
+| [docs/stack/NUXT.md](docs/stack/NUXT.md) | Nuxt frontends: setup and agent rules |
+| [docs/stack/TAILWIND.md](docs/stack/TAILWIND.md) | Tailwind CSS styling: setup and agent rules |
+| [docs/stack/POSTGRES.md](docs/stack/POSTGRES.md) | Postgres via Docker Compose: setup, database cleanup and agent rules |
+| [docs/stack/HETZNER-TRAEFIK.md](docs/stack/HETZNER-TRAEFIK.md) | Deploying to Hetzner behind Traefik |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | A step-by-step checklist for onboarding an existing repo |
 | [AGENTS.md](AGENTS.md) | Guidance for coding agents working on this repo, including the documentation rules |
 | [CLAUDE.md](CLAUDE.md) | Imports `AGENTS.md` for Claude Code |

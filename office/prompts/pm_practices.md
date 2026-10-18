@@ -24,7 +24,7 @@ Review how this repo is built and maintained, and suggest the few improvements t
 - **Docs organization:** are docs split into small pages with one clear scope each, all in the `mkdocs.yml` nav? Flag long pages that mix topics, pages missing from the nav, and facts repeated across pages that have started to disagree.
 - **The docs site and user manual:** is there an MkDocs site (`mkdocs.yml`) that builds with `--strict`, a `docs/manual/README.md` that covers every feature and page the app has, and a `docs/manual/pages.json` listing them? Look for features with no manual section, stale screenshots, and manual text that no longer matches the app.
 - **Design system:** are `PRODUCT.md` and `DESIGN.md` present and current, and is impeccable committed?
-- **Conventions for the preferred stack:** Django + DRF with uv and ruff, TypeScript frontends with Tailwind, Postgres via docker compose, deploys to Hetzner behind Traefik.
+- **Conventions for this repo's stack:** does the repo follow the setup and the agent guidance in "This repo's stack" above? Suggest the gaps that would most help agents, such as a missing database-name override or a typecheck that fails on a fresh clone.
 
 ## What to do
 

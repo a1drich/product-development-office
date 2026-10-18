@@ -29,6 +29,7 @@ Never run `office start` without `--dry-run` against a repo the owner hasn't ask
 - `office/orchestrator.py` applies verdicts. Its tests (`tests/test_orchestrator.py`) use a fake GitHub and stubbed agents; extend the fakes rather than calling real CLIs in tests.
 - Role prompts live in `office/prompts/`, with `{{name}}` placeholders that are filled in a single pass. Every prompt ends with the shared `_verdict.md`. When you add an outcome, update the prompt, the `allowed` set in the orchestrator and a test together.
 - All external commands go through `office/shell.run`, which strips API keys from the environment. Git calls on a target go through `Workspace.git`, which serializes them and retries lock contention.
+- `office/stacks.py` reads `docs/stack/*.md`, detects which guides match a target and builds the prompts' stack section. It holds no stack knowledge itself; keep that in the guides.
 - `office/databases.py` drops agents' throwaway databases in the target's compose Postgres. It only ever touches names starting with `office_`; keep that guard.
 - `office/shoot.py` (Playwright) has a real-browser test in `tests/test_shoot.py`. Run `uv run playwright install chromium` once first.
 
@@ -71,13 +72,15 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
 
 ## Target repos
 
-The office is optimized for target repos that use Django, DRF and `uv`/`ruff` for the backend, TypeScript frontends (Nuxt or Next.js), Postgres via `docker compose`, and Docker deploys on Hetzner behind Traefik. It expects those repos to have:
+The stacks the office supports are listed in `docs/stack/README.md`, one guide per tool (Django, Next.js, Nuxt, Tailwind, Postgres, Hetzner and Traefik). Whatever the stack, it expects target repos to have:
 
 - an `AGENTS.md` (with a `CLAUDE.md` that imports it) and `docs/`, which every agent reads first
 - a single `make verify` or `npm run verify` command as the definition of done
 - the design system kept in the repo, with the impeccable skill committed
 
 Role prompts should build on these conventions instead of re-describing them.
+
+**Stack-specific knowledge lives only in `docs/stack/`.** Role prompts, `office/` code and the other docs stay stack-neutral. When the office learns something that applies to every repo on one stack (a command that must run first, a test-isolation rule, a deploy pattern), add it to that stack's guide: under `## Agent guidance` if agents must follow it, which puts it in their prompts, otherwise under `## Setting up a repo`. A new stack is a new guide with a `detect` header; `tests/test_stacks.py` checks every guide is valid and listed in `docs/stack/README.md`.
 
 ## Office context vs target context
 
@@ -113,7 +116,8 @@ The docs are the product until the code exists, and afterwards they are what the
   | `docs/DOCS-SITE.md` | The target's MkDocs site and user manual |
   | `docs/ARCHITECTURE.md` | Modules, claims, cleanup, billing rules, context separation |
   | `docs/DECISIONS.md` | Decisions and inspiration |
-  | `docs/SETUP.md` | The office machine, target-repo conventions, deployment |
+  | `docs/SETUP.md` | The office machine, and the conventions every target follows whatever its stack |
+  | `docs/stack/*.md` | Everything specific to one stack: its setup, its agent rules, its deployment. `docs/stack/README.md` owns the guide format and the reference combination. |
   | `docs/INTEGRATION.md` | Onboarding an existing repo |
 
   When two docs disagree, fix the one that isn't the owner.

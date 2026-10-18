@@ -1,6 +1,6 @@
 # Integrating an existing repo
 
-This guide prepares an existing GitHub repo so the office can work on it. Most of the steps are repo hygiene that also helps human contributors.
+This guide prepares an existing GitHub repo so the office can work on it. Most of the steps are repo hygiene that also helps human contributors. Each tool the repo uses also has a [stack guide](stack/README.md) with its own setup steps.
 
 Start by running the readiness check. It covers every item below that can be checked automatically:
 
@@ -89,7 +89,7 @@ verify: lint test typecheck lint-fe
 Or with npm workspaces, add `"verify": "./scripts/verify.sh"` to the root `package.json` and have that script run each stage in order and fail fast.
 
 Things to check:
-- **Typecheck explicitly.** Nuxt and Next.js production builds often skip type checking, so a passing build doesn't prove the types are right.
+- **Typecheck explicitly.** Frontend production builds often skip type checking, so a passing build doesn't prove the types are right. The [stack guides](stack/README.md) say how for each framework.
 - **Keep the command quiet and fast.** Agents will run it many times. If the full suite takes minutes, document how to run a single test in `AGENTS.md`.
 - **Exit non-zero on any failure.** Agents trust the exit code.
 
@@ -97,10 +97,10 @@ Things to check:
 
 The engineers and testers run everything on your machine, in parallel, without your accounts.
 
-- **Compose file:** `docker-compose.yml` starts Postgres (and Redis if needed).
+- **Compose file:** `docker-compose.yml` starts the database (and Redis if needed). See [Postgres](stack/POSTGRES.md).
 - **Env defaults:** `.env.example` works as-is for local development. Add a `make env` target that copies it to `.env` without overwriting an existing one.
 - **Mocked external services:** put each one (payments, OAuth, messaging) behind a flag such as `PAYMENTS_MOCK=true`, so the whole product runs end to end offline.
-- **Demo data:** a `seed_demo` management command (`make seed`) creates realistic data, so the tester can exercise real flows.
+- **Demo data:** a seed command (`make seed`, such as Django's `seed_demo`) creates realistic data, so the tester can exercise real flows.
 - **Separate test database:** tests use their own database, and its name can be overridden per run, for example `TEST_DB_NAME=myapp_test_agent2`. Several agents running the suite at once must not share one. Make every database name overridable the same way (dev, test and end-to-end): agents name the databases they create with a prefix the office gives them, and the office drops those databases after each run. Databases it can't name that way are left behind.
 - **Configurable ports:** dev server ports can be set from env vars, so two worktrees can run at the same time.
 

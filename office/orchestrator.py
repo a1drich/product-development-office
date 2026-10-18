@@ -10,7 +10,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
-from office import databases, planner, readiness, shell
+from office import databases, planner, readiness, shell, stacks
 from office import labels as L
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
@@ -98,6 +98,7 @@ class Office:
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
         self.dbs = databases.Databases(ws.clone, gh.repo)
+        self.stacks = stacks.load()
 
     # --- loop -------------------------------------------------------------------
 
@@ -371,6 +372,7 @@ class Office:
             "comments": format_comments(issue),
             "open_issues": format_open_issues(self.gh.open_issue_titles(), issue.number),
             "db_prefix": databases.prefix_for(self.gh.repo, issue.number),
+            "stack": stacks.prompt_section(stacks.detect(self.stacks, self.ws.clone)),
             "verify": self.verify,
             "branch": branch_name(issue.number),
             "base": self.ws.default_branch(),

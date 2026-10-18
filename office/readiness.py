@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from office import labels as L
+from office import stacks
 
 FAIL, WARN, PASS = "fail", "warn", "pass"
 
@@ -172,6 +173,14 @@ def check_files(root: Path) -> list[Finding]:
     else:
         out.append(Finding("env-example", WARN, "no .env.example",
                            "Add a .env.example that works as-is for local development."))
+
+    found = stacks.detect(stacks.load(), root)
+    if found:
+        out.append(Finding("stack", PASS, "stack guides: " + ", ".join(s.name for s in found)))
+    else:
+        # Not a gap in the repo, so it never becomes an issue: the office lacks a guide.
+        out.append(Finding("stack", PASS, "no stack guide matches; agents follow AGENTS.md "
+                                          "alone (add one in the office's docs/stack/)"))
 
     workflows = root / ".github" / "workflows"
     if workflows.is_dir() and any(workflows.glob("*.y*ml")):
