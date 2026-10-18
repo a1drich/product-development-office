@@ -4,7 +4,7 @@ Guidance for every coding agent working on this repo. Codex reads this file dire
 
 ## Current state
 
-Early. The orchestrator, the five roles, `office check` and `office start` are built and unit tested. The full loop has run end to end on a sandbox repo, but not on a production project yet. The project's goal is in the README: one person running a business with the output of a whole product and development team. `README.md` is the spec and documents the architecture. `docs/SETUP.md` covers the office machine, target-repo conventions and the Hetzner + Traefik deployment pattern. `docs/INTEGRATION.md` is the checklist for onboarding an existing repo.
+Early. The orchestrator, the five roles, `office check` and `office start` are built and unit tested. The full loop has run end to end on a sandbox repo, but not on a production project yet. The project's goal is in the README: one person running a business with the output of a whole product and development team. `README.md` is the overview and the index of every doc. `docs/HOW-IT-WORKS.md` explains the agent loop and the delivery workflow, and each other doc in `docs/` has one scope (see the README's Documentation table).
 
 ## Commands
 
@@ -36,7 +36,7 @@ A Python orchestrator that runs an agent swarm on a **target** GitHub repo. That
 
 ## Invariants to keep when building it
 
-These come from the README and are hard requirements. Read the README for the full reasoning.
+These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`, and are hard requirements. Read those for the full reasoning.
 
 - **GitHub Issues is the only state.** Issues, labels, comments and PRs on the target repo hold all task state. The orchestrator keeps no hidden state beyond which agents it is currently running, and it touches GitHub only through `office/gh.py`.
 - **Agents do the work; the orchestrator moves the cards.** Agents end with a JSON verdict. Only the orchestrator changes status labels, files blockers, files follow-up issues and merges.
@@ -94,12 +94,28 @@ Two contexts are maintained separately, and neither leaks into the other:
 The docs are the product until the code exists, and afterwards they are what the office's own agents read. Keep them true.
 
 - **Docs change in the same commit as the behavior.** If a change alters a role, label, workflow step, command, invariant or decision, update every doc that describes it in that same commit. A commit that makes a doc wrong is incomplete.
-- **One home per fact.** The README owns the design: roles, labels, workflow, blocker template, billing rules, decisions. `docs/SETUP.md` owns installation and deployment. `docs/INTEGRATION.md` owns onboarding an existing repo. Other files summarize and link to the owner instead of restating the details. When two docs disagree, fix the one that isn't the owner.
-- **This file mirrors the README's invariants.** When an invariant in the README changes (labels, role-to-CLI mapping, merge and deploy rules, startup sequence, stop condition), update the invariants section above in the same commit.
+- **Small files, one scope each, all linked.** Each doc covers one topic, stated in its first paragraph and in the README's Documentation table. When a doc grows a second topic, split it into its own file rather than adding a section. Every doc is linked from the README, and every doc links back to it.
+- **One home per fact.** Each fact lives in the doc that owns its scope, and other docs link to it instead of restating it:
+
+  | Doc | Owns |
+  |---|---|
+  | `README.md` | The goal, status, quick start, target stack summary, core principles, and the index |
+  | `docs/HOW-IT-WORKS.md` | The agent loop and the delivery workflow, as diagrams |
+  | `docs/USAGE.md` | Commands, configuration, stop and resume, day-to-day use, switching projects |
+  | `docs/WORKFLOW.md` | Roles, labels, blockers, dependencies, practice suggestions, the stop condition |
+  | `docs/TESTING.md` | How changes are verified, UI and UX testing, and testing the office |
+  | `docs/DOCS-SITE.md` | The target's MkDocs site and user manual |
+  | `docs/ARCHITECTURE.md` | Modules, claims, cleanup, billing rules, context separation |
+  | `docs/DECISIONS.md` | Decisions and inspiration |
+  | `docs/SETUP.md` | The office machine, target-repo conventions, deployment |
+  | `docs/INTEGRATION.md` | Onboarding an existing repo |
+
+  When two docs disagree, fix the one that isn't the owner.
+- **This file mirrors the invariants.** When an invariant changes in its owning doc (labels, role-to-CLI mapping, merge and deploy rules, startup sequence, stop condition), update the invariants section above in the same commit. If a change alters the loop or the delivery workflow, update the diagrams in `docs/HOW-IT-WORKS.md` too.
 - **Agent guidance lives here only.** `CLAUDE.md` contains nothing but the import of this file. Put new guidance here, never in `CLAUDE.md`.
 - **Every markdown file is linked from the README's Documentation table.** Add a row when you add a doc and remove it when you delete one. Files a *target* repo is expected to have (such as `DESIGN.md`) are mentioned as plain text, not linked.
 - **Label what isn't built.** Describe anything not yet implemented as **(planned)**. When it ships, remove the marker and replace any example output with real output. Never document a command, flag or file that doesn't exist without that marker.
-- **Commands must be real.** Every command in the docs must either have been run or be marked planned. When the code adds or renames a command, update this file, the README and the guides together.
+- **Commands must be real.** Every command in the docs must either have been run or be marked planned. When the code adds or renames a command, update this file, `docs/USAGE.md` and the guides together.
 - **Run the check before committing:** `./scripts/check-docs.sh`. It fails if a markdown file isn't linked from the README or a relative link points at a missing file.
 
 ## Other rules

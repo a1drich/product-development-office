@@ -1,4 +1,4 @@
-"""The label set that drives the office's state machine. See README.md, "Labels"."""
+"""The label set that drives the office's state machine. See docs/WORKFLOW.md, "Labels"."""
 
 from __future__ import annotations
 
