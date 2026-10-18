@@ -74,6 +74,9 @@ class FakeGitHub:
                 return i.number
         return None
 
+    def open_issue_titles(self):
+        return {i.number: i.title for i in self.open_issues()}
+
     def edit_body(self, n, body):
         self.issues[n].body = body
 
@@ -248,6 +251,32 @@ def test_practice_suggestions_wait_for_approval_and_are_not_duplicated(make_offi
     gh.issues[1].labels = {L.TRIAGE}
     office.execute(Task("triage", 1))
     assert sum(i.title == practice["title"] for i in gh.issues.values()) == 1
+
+
+def test_follow_ups_matching_an_open_title_loosely_are_not_filed(make_office):
+    follow_ups = [{"title": "Practice: add a CI workflow?", "body": "b"},
+                  {"title": "Add CI workflows for deploys", "body": "b"}]
+    office, gh = make_office(
+        [Issue(1, "x", "", {L.TRIAGE}), Issue(2, "Add CI workflow", "", {L.TRIAGE})],
+        [Verdict("ready", "ok", new_issues=follow_ups)],
+    )
+    office.execute(Task("triage", 1))
+    titles = [i.title for i in gh.issues.values()]
+    assert "Practice: add a CI workflow?" not in titles
+    assert "Add CI workflows for deploys" in titles  # different words: a different issue
+
+
+def test_prompts_list_the_other_open_issues(make_office):
+    office, gh = make_office([Issue(1, "Add login", "", {L.TRIAGE}),
+                              Issue(2, "Add MkDocs site", "", {L.READY}),
+                              Issue(3, orchestrator.STATUS_TITLE, "", {L.STATUS_ISSUE})], [])
+    listed = office.values(gh.issues[1])["open_issues"]
+    assert listed == "- #2 Add MkDocs site"
+
+
+def test_normalize_title():
+    assert orchestrator.normalize_title("Practice:  Add CI!") == orchestrator.normalize_title(
+        "add ci")
 
 
 def test_practices_review_is_scheduled_when_due_and_capped(make_office):

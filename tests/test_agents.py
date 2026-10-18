@@ -49,7 +49,7 @@ def test_prompts_render_without_leftover_placeholders(role):
     values = {k: "X" for k in
               ["repo", "number", "title", "body", "comments", "verify", "branch", "base", "pr",
                "pr_context", "findings", "open_practices", "max_new", "shoot",
-               "docs_build"]}
+               "docs_build", "open_issues"]}
     text = render(role, values)
     assert "{{" not in text
     assert '"outcome"' in text  # the shared verdict instructions are included
@@ -117,3 +117,10 @@ def test_leftover_pids_ignores_sibling_folders(tmp_path):
 
     assert _under("/w/app/sub", "/w/app")
     assert not _under("/w/app-worktrees/issue-1", "/w/app")
+
+
+def test_every_prompt_shows_the_open_issues_before_filing_new_ones():
+    for role in ("pm", "designer", "engineer", "reviewer", "tester", "pm_blocker", "pm_practices"):
+        text = render(role, {"open_issues": "- #7 Add CI"})
+        assert "- #7 Add CI" in text
+        assert text.index("- #7 Add CI") > text.index("`new_issues`")

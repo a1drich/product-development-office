@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import signal
 import threading
 import time
@@ -29,6 +30,18 @@ SCREENSHOT_DIR = "docs/manual/screenshots/"
 
 def mark(name: str) -> str:
     return f"<!-- office:{name} -->"
+
+
+def normalize_title(title: str) -> str:
+    """Compare titles ignoring case, punctuation, articles and a `Practice:` prefix."""
+    title = re.sub(r"^\s*practice:\s*", "", title, flags=re.I)
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    return " ".join(w for w in words if w not in {"a", "an", "the"})
+
+
+def format_open_issues(titles: dict[int, str], exclude: int) -> str:
+    shown = [f"- #{n} {t}" for n, t in sorted(titles.items()) if n != exclude and t != STATUS_TITLE]
+    return "\n".join(shown) or "(none)"
 
 
 def format_comments(issue: Issue, limit: int = 30) -> str:
@@ -346,6 +359,7 @@ class Office:
             "title": issue.title,
             "body": issue.body or "(empty)",
             "comments": format_comments(issue),
+            "open_issues": format_open_issues(self.gh.open_issue_titles(), issue.number),
             "verify": self.verify,
             "branch": branch_name(issue.number),
             "base": self.ws.default_branch(),
@@ -571,9 +585,12 @@ class Office:
         log.info("#%s waiting on %s", issue.number, listed)
 
     def file_follow_up(self, source: Issue, title: str, body: str) -> None:
-        if self.gh.find_issue_by_title(title):
-            log.info("#%s: %r is already open; not filing it again", source.number, title)
-            return
+        wanted = normalize_title(title)
+        for n, existing in self.gh.open_issue_titles().items():
+            if normalize_title(existing) == wanted:
+                log.info("#%s: %r is already open as #%s; not filing it again",
+                         source.number, title, n)
+                return
         labels = [L.TRIAGE]
         if title.lower().startswith("practice:"):
             labels.append(L.PRACTICE)

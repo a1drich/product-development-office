@@ -29,6 +29,10 @@ Issue labels drive the workflow. The orchestrator polls the target repo, finds i
                                                                          status:done ─PM─▶ closed
 ```
 
+## Follow-up issues
+
+Any agent can ask for follow-up issues in its verdict: bugs it found, work it split off, or practice suggestions. The office files them with `status:triage`. To avoid duplicates, every agent's prompt lists the open issues, and agents point at an existing issue (or comment on it) instead of filing a new one. As a backstop, the office skips a follow-up whose title matches an open issue's, ignoring case, punctuation, articles and a `Practice:` prefix.
+
 ## Labels
 
 Labels drive everything: one status label per issue says where it is, and the office acts on any change in its next cycle. An open issue with no status label is treated as `status:triage`. Every label, who sets and removes it, and the repo labels the office also honors are in **[Labels](LABELS.md)**.
@@ -69,7 +73,7 @@ The office keeps suggesting better practices for the target repo:
 - **A recurring review.** At most once every 24 hours, while fewer than three practice issues are open, the PM reviews the repo. It looks for drift between `AGENTS.md` and the code, gaps in the verify command, tests and CI, local-development friction, the design system, and fit with the [target stack](../README.md#target-stack). The automated readiness findings feed into it.
 - **While working.** Any agent that notices something the repo should do better can add one `Practice:` issue to its verdict.
 
-Suggestions are filed with `office:practice` and `blocked:human`, so they wait for you and show up in the "Office status" issue. Remove `blocked:human` to have the office do one, or close it to decline. Duplicates are skipped. To let the office act on suggestions without asking, set `practices_need_approval` to `false` in `.office/config.json`.
+Suggestions are filed with `office:practice` and `blocked:human`, so they wait for you and show up in the "Office status" issue. Remove `blocked:human` to have the office do one, or close it to decline. Duplicates are skipped (see [Follow-up issues](#follow-up-issues)). To let the office act on suggestions without asking, set `practices_need_approval` to `false` in `.office/config.json`.
 
 
 ## Stop condition

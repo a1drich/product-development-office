@@ -124,6 +124,12 @@ class GitHub:
         )
         return [_issue(d) for d in data]
 
+    def open_issue_titles(self) -> dict[int, str]:
+        """Open issues' numbers and titles only: cheap enough to fetch for every agent run."""
+        data = self._gh_json("issue", "list", "--state", "open", "--limit", "500",
+                             "--json", "number,title")
+        return {d["number"]: d["title"] for d in data}
+
     def issue(self, number: int) -> Issue:
         return _issue(
             self._gh_json(
