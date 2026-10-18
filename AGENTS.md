@@ -68,6 +68,21 @@ The office is optimized for target repos that use Django, DRF and `uv`/`ruff` fo
 
 Role prompts should build on these conventions instead of re-describing them.
 
+## Office context vs target context
+
+Two contexts are maintained separately, and neither leaks into the other:
+
+| | Office context | Target context |
+|---|---|---|
+| What | How the office works: roles, labels, verdicts, prompts, config | How the product works and how to work in it |
+| Where | This repo: `README.md`, `AGENTS.md`, `docs/`, `office/prompts/` | The target repo: its `AGENTS.md`, `docs/`, `PRODUCT.md`, `DESIGN.md` |
+| Maintained by | Changes to this repo, under the drift rules below | The office's agents, in the same PR as the change (`office/prompts/_context.md`) |
+| Local state | `.office/config.json` | `workspace/<repo>/` and its worktrees |
+
+- **Nothing target-specific goes into this repo:** no repo names, domains, quirks or findings from a target. Use `example.com` and `owner/name` placeholders. Something learned about a target belongs in the target repo, as a fix in a PR or a practice issue.
+- **Nothing office-specific goes into a target's files.** Agents may mention the office in issue and PR comments, but a target's code and docs must make sense to a team that has never heard of the office. `_context.md` tells every agent this.
+- **Keep suggesting better practices for the target.** The PM's recurring practices review (`office/prompts/pm_practices.md`) and every agent's verdict can file `Practice:` issues. When you change what the office checks, update the review prompt and `office/readiness.py` together.
+
 ## Preventing documentation drift
 
 The docs are the product until the code exists, and afterwards they are what the office's own agents read. Keep them true.

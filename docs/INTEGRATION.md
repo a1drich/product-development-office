@@ -191,6 +191,7 @@ While the office runs:
 
 - **Answering a blocker:** comment on the blocker issue with your decision and remove `blocked:human`. The PM picks it up on the next cycle.
 - **Steering:** open an issue, or edit an issue's labels or priority. The office keeps no state outside GitHub, so your changes take effect immediately.
+- **Practice suggestions:** the office keeps filing `Practice:` issues with improvements for the repo, such as stale docs, missing tests or a slow verify command. They wait for you: remove `blocked:human` to accept one, or close it to decline.
 - **Seeing what's waiting on you:** when the office goes idle, it lists every blocked issue in the "Office status" issue.
 - **Pausing:** stop the `office` process with Ctrl-C. Any issue left at `status:in-progress` is released when its claim expires (two hours by default).
 

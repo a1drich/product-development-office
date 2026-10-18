@@ -29,6 +29,13 @@ class Config:
     # How long a role pauses after hitting its subscription usage limit.
     rate_limit_pause_minutes: int = 30
     agent_timeout_minutes: int = 60
+    # The PM reviews the repo's practices at most this often, while fewer than
+    # max_open_practices practice issues are open.
+    practices_interval_hours: int = 24
+    max_open_practices: int = 3
+    # Practice suggestions wait for a human to approve them (remove blocked:human)
+    # before the office works on them.
+    practices_need_approval: bool = True
     # Claude Code permission mode for headless agents ("auto", "acceptEdits", ...).
     claude_permission_mode: str = "auto"
     # Codex sandbox per role. Testers run Docker and dev servers, so they need full access.

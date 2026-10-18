@@ -57,6 +57,9 @@ class FakeGitHub:
         self.merged.append(pr)
 
     def find_issue_by_title(self, title, label=None):
+        for i in self.open_issues():
+            if i.title == title and (label is None or label in i.labels):
+                return i.number
         return None
 
     def edit_body(self, n, body):
@@ -208,3 +211,46 @@ def test_unexpected_outcome_is_a_failure(make_office):
     office, gh = make_office([Issue(1, "x", "", {L.TRIAGE})], [Verdict("merge-it", "nope")])
     office.execute(Task("triage", 1))
     assert FAILED_MARK in gh.issues[1].comments[-1].body
+
+
+def test_practice_suggestions_wait_for_approval_and_are_not_duplicated(make_office):
+    practice = {"title": "Practice: run ruff in CI", "body": "ci.yml skips lint"}
+    office, gh = make_office(
+        [Issue(1, "x", "", {L.TRIAGE})],
+        [Verdict("ready", "ok", new_issues=[practice, {"title": "Bug: y", "body": "b"}]),
+         Verdict("ready", "ok", new_issues=[practice])],
+    )
+    office.execute(Task("triage", 1))
+    filed = {i.title: i for i in gh.issues.values() if i.number != 1}
+    assert {L.PRACTICE, L.BLOCKED, L.TRIAGE} <= filed["Practice: run ruff in CI"].labels
+    assert L.BLOCKED not in filed["Bug: y"].labels
+    gh.issues[1].labels = {L.TRIAGE}
+    office.execute(Task("triage", 1))
+    assert sum(i.title == practice["title"] for i in gh.issues.values()) == 1
+
+
+def test_practices_review_is_scheduled_when_due_and_capped(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
+    now = datetime.now(UTC)
+    task = office.practices_task(gh.open_issues(), [], now)
+    assert task and task.kind == "practices"
+    status = gh.issues[task.issue]
+    assert L.STATUS_ISSUE in status.labels
+
+    office.last_practices = now
+    assert office.practices_task(gh.open_issues(), [], now) is None
+
+    office.last_practices = None
+    for n in range(3):
+        gh.create_issue(f"Practice: {n}", "", [L.PRACTICE, L.BLOCKED])
+    assert office.practices_task(gh.open_issues(), [], now) is None
+
+
+def test_practices_review_files_suggestions_and_records_the_run(make_office):
+    office, gh = make_office(
+        [Issue(1, "Office status", "", {L.STATUS_ISSUE})],
+        [Verdict("done", "reviewed", new_issues=[{"title": "Practice: x", "body": "why"}])],
+    )
+    office.execute(Task("practices", 1))
+    assert any(i.title == "Practice: x" for i in gh.issues.values())
+    assert "<!-- office:practices -->" in gh.issues[1].comments[-1].body

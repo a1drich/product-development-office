@@ -94,8 +94,9 @@ class AgentResult:
 def render(role: str, values: dict[str, str]) -> str:
     """Fill a role prompt. Placeholders are {{name}}, so issue text with braces is safe."""
     text = resources.files("office.prompts").joinpath(f"{role}.md").read_text()
-    common = resources.files("office.prompts").joinpath("_verdict.md").read_text()
-    text = text.replace("{{verdict}}", common)
+    for part in ("verdict", "context"):
+        shared = resources.files("office.prompts").joinpath(f"_{part}.md").read_text()
+        text = text.replace("{{" + part + "}}", shared)
     return re.sub(r"\{\{(\w+)\}\}", lambda m: values.get(m.group(1), m.group(0)), text)
 
 

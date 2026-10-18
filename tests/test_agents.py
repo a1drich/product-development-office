@@ -42,14 +42,18 @@ def test_failure_without_verdict_has_error():
     assert not r.rate_limited and "no verdict" in r.error
 
 
-@pytest.mark.parametrize("role", ["pm", "pm_blocker", "designer", "engineer", "reviewer", "tester"])
+@pytest.mark.parametrize(
+    "role", ["pm", "pm_blocker", "pm_practices", "designer", "engineer", "reviewer", "tester"]
+)
 def test_prompts_render_without_leftover_placeholders(role):
     values = {k: "X" for k in
               ["repo", "number", "title", "body", "comments", "verify", "branch", "base", "pr",
-               "pr_context"]}
+               "pr_context", "findings", "open_practices", "max_new"]}
     text = render(role, values)
     assert "{{" not in text
     assert '"outcome"' in text  # the shared verdict instructions are included
+    assert "Two contexts, kept separate" in text
+    assert "Practice: " in text
 
 
 def test_issue_text_with_braces_is_safe():

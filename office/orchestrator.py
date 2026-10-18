@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 from office import labels as L
-from office import planner
+from office import planner, readiness
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import Config
 from office.gh import GitHub, Issue, branch_name
@@ -59,6 +59,8 @@ class Office:
         self.paused_until: dict[str, datetime] = {}
         self.clone_lock = threading.Lock()
         self.last_summary = ""
+        self.status_issue: int | None = None
+        self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
 
     # --- loop -------------------------------------------------------------------
@@ -78,6 +80,9 @@ class Office:
             now,
             timedelta(minutes=self.cfg.claim_ttl_minutes),
         )
+        practices = self.practices_task(issues, tasks, now)
+        if practices:
+            tasks.append(practices)
         if self.dry_run:
             self.log_overview(issues, now)
             for t in tasks:
@@ -88,6 +93,58 @@ class Office:
         if not tasks and not self.running:
             self.post_summary(issues)
         return tasks
+
+    # --- practices --------------------------------------------------------------
+
+    def practices_task(self, issues: list[Issue], tasks: list[Task], now: datetime) -> Task | None:
+        """A practices review, when one is due and the PM has a free slot."""
+        open_practices = [i for i in issues if L.PRACTICE in i.labels]
+        if len(open_practices) >= self.cfg.max_open_practices:
+            return None
+        pm_busy = sum(1 for r in self.running.values() if r == "pm")
+        pm_busy += sum(1 for t in tasks if t.role == "pm")
+        if "pm" in self.paused(now) or pm_busy >= self.cfg.limits.get("pm", 1):
+            return None
+        number = self.ensure_status_issue()
+        if number in self.running:
+            return None
+        if self.last_practices is None:
+            marks = [c.created_at for c in self.gh.issue(number).comments
+                     if mark("practices") in c.body]
+            self.last_practices = max(marks) if marks else datetime.min.replace(tzinfo=UTC)
+        if now - self.last_practices < timedelta(hours=self.cfg.practices_interval_hours):
+            return None
+        return Task("practices", number)
+
+    def do_practices(self, issue: Issue, task: Task) -> None:
+        findings = [f for f in readiness.check_files(self.ws.clone) if f.level != readiness.PASS]
+        open_practices = [i for i in self.gh.open_issues() if L.PRACTICE in i.labels]
+        values = self.values(
+            issue,
+            findings="\n".join(f"- {f.level}: {f.summary}. {f.fix.splitlines()[0]}"
+                               for f in findings if f.fix) or "(all automated checks pass)",
+            open_practices="\n".join(f"- #{i.number} {i.title}" for i in open_practices)
+            or "(none)",
+            max_new=str(max(1, self.cfg.max_open_practices - len(open_practices))),
+        )
+        self.last_practices = datetime.now(UTC)
+        result = self.in_clone("pm", render("pm_practices", values))
+        verdict = self.accept(issue, task, result, {"done"})
+        filed = len(verdict.new_issues) if verdict else 0
+        self.gh.comment(issue.number, f"Practices review: {filed} suggestion(s) filed.\n"
+                                      f"{mark('practices')}")
+
+    def ensure_status_issue(self) -> int:
+        if self.status_issue is None:
+            self.status_issue = self.gh.find_issue_by_title(STATUS_TITLE, L.STATUS_ISSUE)
+        if self.status_issue is None and not self.dry_run:
+            self.status_issue = self.gh.create_issue(
+                STATUS_TITLE,
+                f"The office is running. This issue lists what is waiting on a human.\n"
+                f"{mark('status')}",
+                [L.STATUS_ISSUE],
+            )
+        return self.status_issue or 0
 
     def log_overview(self, issues: list[Issue], now: datetime) -> None:
         ttl = timedelta(minutes=self.cfg.claim_ttl_minutes)
@@ -151,7 +208,8 @@ class Office:
 
     def post_summary(self, issues: list[Issue]) -> None:
         waiting = sorted((i for i in issues if i.blocked),
-                         key=lambda i: (not i.is_blocker, planner.priority(i), i.number))
+                         key=lambda i: (not i.is_blocker, L.PRACTICE in i.labels,
+                                        planner.priority(i), i.number))
         lines = [f"- #{i.number} {i.title}" for i in waiting]
         summary = "\n".join(lines) or "- (none)"
         if summary == self.last_summary:
@@ -159,15 +217,11 @@ class Office:
         self.last_summary = summary
         body = (
             "The office has nothing it can act on. These issues are waiting on a human "
-            "(office decisions first, then by priority):\n\n"
+            "(office decisions first, then practice suggestions, then by priority):\n\n"
             f"{summary}\n\n{mark('status')}"
         )
         log.info("idle. open blockers:\n%s", summary)
-        number = self.gh.find_issue_by_title(STATUS_TITLE, L.STATUS_ISSUE)
-        if number:
-            self.gh.edit_body(number, body)
-        else:
-            self.gh.create_issue(STATUS_TITLE, body, [L.STATUS_ISSUE])
+        self.gh.edit_body(self.ensure_status_issue(), body)
 
     # --- agent tasks ------------------------------------------------------------
 
@@ -343,13 +397,27 @@ class Office:
                                 status=fallback_status)
             return None
         for new in verdict.new_issues:
-            n = self.gh.create_issue(new["title"], new["body"], [L.TRIAGE])
-            log.info("#%s filed follow-up #%s", issue.number, n)
+            self.file_follow_up(issue, new["title"], new["body"])
         if verdict.outcome == "blocked":
             if file_blocker:
                 self.file_blocker(issue, verdict)
             return verdict if not file_blocker else None
         return verdict
+
+    def file_follow_up(self, source: Issue, title: str, body: str) -> None:
+        if self.gh.find_issue_by_title(title):
+            log.info("#%s: %r is already open; not filing it again", source.number, title)
+            return
+        labels = [L.TRIAGE]
+        if title.lower().startswith("practice:"):
+            labels.append(L.PRACTICE)
+            if self.cfg.practices_need_approval:
+                labels.append(L.BLOCKED)
+                body += ("\n\n---\nA suggested practice. To have the office do it, remove "
+                         "`blocked:human`. To decline, close this issue.")
+        n = self.gh.create_issue(title, f"{body}\n\nSuggested while working on #{source.number}.",
+                                 labels)
+        log.info("#%s filed #%s: %s", source.number, n, title)
 
     def file_blocker(self, issue: Issue, verdict: Verdict) -> None:
         blocker = verdict.blocker or {

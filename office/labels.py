@@ -18,6 +18,7 @@ BLOCKED = "blocked:human"
 BLOCKED_ALIASES = {"blocked"}
 BLOCKER = "office:blocker"
 STATUS_ISSUE = "office:status"
+PRACTICE = "office:practice"
 
 STATUSES = [TRIAGE, DESIGN, READY, IN_PROGRESS, IN_REVIEW, TESTING, DONE]
 
@@ -40,5 +41,6 @@ LABELS = [
     Label(BLOCKED, "B60205", "Waiting for a human decision"),
     Label(BLOCKER, "B60205", "A decision the office needs from a human"),
     Label(STATUS_ISSUE, "BFDADC", "The office's running status summary"),
+    Label(PRACTICE, "C2E0C6", "A suggested improvement to how the repo is built or maintained"),
     *(Label(f"priority:p{p}", "FBCA04", f"Priority {p}") for p in range(4)),
 ]

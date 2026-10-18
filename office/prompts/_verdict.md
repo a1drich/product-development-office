@@ -15,5 +15,6 @@ End your final message with exactly one JSON object in a ```json fenced block, a
 - `pr`: the pull request number, when your role created or worked on one; otherwise `null`.
 - `blocker`: when the outcome is `blocked`, an object with `title` (short), `decision` (the question), `context`, `options` (a list of strings, each a choice and its tradeoff) and `recommendation`. Otherwise `null`. The office files the blocker issue for you, so don't create one yourself.
 - `new_issues`: follow-up issues to file, as `{"title", "body"}` objects. The office files them. Use this for bugs you found, or for work you split off.
+- Better practices: if you noticed something the repo should do better, such as stale or missing context in `AGENTS.md` or `docs/`, a gap in tests or CI, or a slow or flaky verify command, add it to `new_issues` with a title starting with `Practice: ` and a body that gives the evidence. At most one per run, and only if it's worth someone's time.
 
 Never change issue labels yourself, never merge, and never deploy or release. The office does the labels and merges based on your verdict. Deploys are always a human decision.

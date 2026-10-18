@@ -130,6 +130,7 @@ Issue labels drive the workflow. The orchestrator polls the target repo, finds i
 | `blocked:human` | Waiting for a human decision. Agents skip it until the label is removed. A repo's existing `blocked` label is treated the same way. |
 | `office:blocker` | A decision issue the office filed. Also carries `blocked:human` until answered. |
 | `office:status` | The single "Office status" issue, where the office lists everything waiting on a human |
+| `office:practice` | A suggested improvement to how the repo is built or maintained (see [Practice suggestions](#practice-suggestions)) |
 | `priority:p0`..`p3` | Set by the PM; p0 is worked first. A repo's existing `P0`..`P3` labels count too. |
 
 An open issue with no status label is treated as `status:triage`, so issues filed by humans are picked up automatically.
@@ -161,6 +162,19 @@ Option 2 for v1. Revisit after launch.
 The blocked issue also gets `blocked:human` and a comment linking the blocker. To answer, comment on the blocker with your decision and remove its `blocked:human` label. On the next cycle the PM reads the answer and updates the issues listed under "Blocks". The office then unblocks them and closes the blocker.
 
 If an agent fails on the same issue three times in a row, for example by crashing, timing out or returning no verdict, the office files a blocker for it instead of retrying forever.
+
+### Practice suggestions
+
+The office keeps suggesting better practices for the target repo:
+
+- **A recurring review.** At most once every 24 hours, while fewer than three practice issues are open, the PM reviews the repo. It looks for drift between `AGENTS.md` and the code, gaps in the verify command, tests and CI, local-development friction, the design system, and fit with the [target stack](#target-stack). The automated readiness findings feed into it.
+- **While working.** Any agent that notices something the repo should do better can add one `Practice:` issue to its verdict.
+
+Suggestions are filed with `office:practice` and `blocked:human`, so they wait for you and show up in the "Office status" issue. Remove `blocked:human` to have the office do one, or close it to decline. Duplicates are skipped. To let the office act on suggestions without asking, set `practices_need_approval` to `false` in `.office/config.json`.
+
+### Two contexts, kept separate
+
+The office's own context (roles, labels, prompts) lives in this repo. The target's context (its `AGENTS.md`, `docs/`, `PRODUCT.md`, `DESIGN.md`) lives in the target. Agents keep the target's context current in the same PR as each change, and never write about the office into the target's files, so the target repo still makes sense to a human team without the office. See [AGENTS.md](AGENTS.md#office-context-vs-target-context).
 
 ### Stop condition
 
