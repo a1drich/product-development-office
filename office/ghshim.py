@@ -1,0 +1,81 @@
+"""A `gh` wrapper on every agent's PATH that signs what the agent posts.
+
+Agents post comments, PRs and issues with `gh` themselves. The office puts this wrapper
+first on their PATH, with `OFFICE_AGENT_ROLE`, `OFFICE_ISSUE` and `OFFICE_REAL_GH` in
+their environment. It adds the role's signature to the body of the commands below and
+runs the real `gh` with everything else unchanged. Edits are left alone, so an issue
+body the PM rewrites doesn't collect a signature on every pass.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from collections.abc import Callable
+from pathlib import Path
+
+from office.config import ROOT
+from office.signature import sign
+
+SIGNED = {("issue", "comment"), ("pr", "comment"), ("pr", "create"), ("pr", "review"),
+          ("issue", "create")}
+BIN = ROOT / ".office" / "bin"
+
+
+def sign_args(
+    argv: list[str], role: str, issue: str | None, read_file: Callable[[str], str],
+    read_stdin: Callable[[], str],
+) -> tuple[list[str], str | None]:
+    """The arguments with the body signed, and the text to send on stdin (if any).
+    A body given in a file or on stdin is signed and passed on stdin instead."""
+    if tuple(argv[:2]) not in SIGNED:
+        return argv, None
+    out: list[str] = []
+    stdin: str | None = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        flag, eq, inline = arg.partition("=")
+        if flag in ("--body", "-b"):
+            value = inline if eq else (argv[i + 1] if i + 1 < len(argv) else "")
+            out += [flag, sign(value, role, issue)]
+            i += 1 if eq else 2
+            continue
+        if flag in ("--body-file", "-F"):
+            path = inline if eq else (argv[i + 1] if i + 1 < len(argv) else "-")
+            text = read_stdin() if path == "-" else read_file(path)
+            out += ["--body-file", "-"]
+            stdin = sign(text, role, issue)
+            i += 1 if eq else 2
+            continue
+        out.append(arg)
+        i += 1
+    return out, stdin
+
+
+def main(argv: list[str]) -> int:
+    real = os.environ.get("OFFICE_REAL_GH") or "gh"
+    role = os.environ.get("OFFICE_AGENT_ROLE")
+    stdin = None
+    if role:
+        argv, stdin = sign_args(argv, role, os.environ.get("OFFICE_ISSUE"),
+                                lambda p: Path(p).read_text(), sys.stdin.read)
+    if stdin is None:
+        return subprocess.run([real, *argv]).returncode
+    return subprocess.run([real, *argv], input=stdin, text=True).returncode
+
+
+def install(bin_dir: Path = BIN) -> Path:
+    """Writes the `gh` wrapper into `bin_dir` (gitignored) and returns the directory."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    shim = bin_dir / "gh"
+    script = (f"#!{sys.executable}\n"
+              "import sys\n"
+              f"sys.path.insert(0, {str(ROOT)!r})\n"
+              "from office.ghshim import main\n"
+              "sys.exit(main(sys.argv[1:]))\n")
+    if not shim.exists() or shim.read_text() != script:
+        shim.write_text(script)
+        shim.chmod(0o755)
+    return bin_dir

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from office import labels as L
 from office.shell import run
+from office.signature import sign
 
 
 @dataclass
@@ -141,11 +142,12 @@ class GitHub:
         args = ["issue", "create", "--title", title, "--body-file", "-"]
         for lb in labels:
             args += ["--label", lb]
-        url = self._gh(*args, input=body).stdout.strip()
+        url = self._gh(*args, input=sign(body, "office")).stdout.strip()
         return int(url.rstrip("/").rsplit("/", 1)[-1])
 
     def comment(self, number: int, body: str) -> None:
-        self._gh("issue", "comment", str(number), "--body-file", "-", input=body)
+        self._gh("issue", "comment", str(number), "--body-file", "-",
+                 input=sign(body, "office", number))
 
     def edit_labels(self, number: int, add: Sequence[str] = (), remove: Sequence[str] = ()) -> None:
         args = ["issue", "edit", str(number)]
@@ -170,7 +172,7 @@ class GitHub:
     def close_issue(self, number: int, comment: str | None = None) -> None:
         args = ["issue", "close", str(number)]
         if comment:
-            args += ["--comment", comment]
+            args += ["--comment", sign(comment, "office", number)]
         self._gh(*args)
 
     def find_issue_by_title(self, title: str, label: str | None = None) -> int | None:
@@ -217,7 +219,7 @@ class GitHub:
         self._gh("pr", "merge", str(pr), "--squash", "--delete-branch")
 
     def pr_comment(self, pr: int, body: str) -> None:
-        self._gh("pr", "comment", str(pr), "--body-file", "-", input=body)
+        self._gh("pr", "comment", str(pr), "--body-file", "-", input=sign(body, "office"))
 
 
 def branch_name(issue_number: int) -> str:

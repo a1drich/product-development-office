@@ -29,6 +29,7 @@ Never run `office start` without `--dry-run` against a repo the owner hasn't ask
 - `office/orchestrator.py` applies verdicts. Its tests (`tests/test_orchestrator.py`) use a fake GitHub and stubbed agents; extend the fakes rather than calling real CLIs in tests.
 - Role prompts live in `office/prompts/`, with `{{name}}` placeholders that are filled in a single pass. Every prompt ends with the shared `_verdict.md`. When you add an outcome, update the prompt, the `allowed` set in the orchestrator and a test together.
 - All external commands go through `office/shell.run`, which strips API keys from the environment. Git calls on a target go through `Workspace.git`, which serializes them and retries lock contention.
+- Everything the office posts to GitHub is signed (`office/signature.py`): the orchestrator in `office/gh.py`, agents through the `gh` wrapper in `office/ghshim.py`. The signature's marker must never start with `<!-- office:`, because the planner treats those comments as state.
 - `office/stacks.py` reads `docs/stack/*.md`, detects which guides match a target and builds the prompts' stack section. It holds no stack knowledge itself; keep that in the guides.
 - `office/databases.py` drops agents' throwaway databases in the target's compose Postgres. It only ever touches names starting with `office_`; keep that guard.
 - `office/shoot.py` (Playwright) has a real-browser test in `tests/test_shoot.py`. Run `uv run playwright install chromium` once first.

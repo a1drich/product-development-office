@@ -439,7 +439,23 @@ def test_worktree_agents_get_a_prefix_and_their_databases_are_dropped(make_offic
     office.safely(Task("implement", 1), office.execute)
     prefix = orchestrator.databases.prefix_for("acme/app", 1)
     assert seen["OFFICE_DB_PREFIX"] == prefix
+    assert (seen["OFFICE_AGENT_ROLE"], seen["OFFICE_ISSUE"]) == ("engineer", "1")
+    if office.real_gh:  # the signing gh wrapper comes first on the agent's PATH
+        assert seen["PATH"].startswith(str(orchestrator.ghshim.BIN))
     assert office.dbs.dropped == [prefix]
+
+
+def test_agents_in_the_main_clone_are_identified_too(make_office, monkeypatch):
+    office, gh = make_office([Issue(1, "Add login", "", set())], [])
+    seen = {}
+
+    def pm(role, prompt, cwd, cfg, exclusive=False, env=None):
+        seen.update(env or {})
+        return AgentResult(role, Verdict("ready", "scoped"), "")
+
+    monkeypatch.setattr(orchestrator, "run_agent", pm)
+    office.execute(Task("triage", 1))
+    assert (seen["OFFICE_AGENT_ROLE"], seen["OFFICE_ISSUE"]) == ("pm", "1")
 
 
 def test_start_sweeps_databases_left_by_earlier_runs(make_office):

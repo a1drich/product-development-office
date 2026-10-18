@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
 import signal
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
-from office import databases, planner, readiness, shell, stacks
+from office import databases, ghshim, planner, readiness, shell, stacks
 from office import labels as L
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
@@ -99,6 +101,7 @@ class Office:
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
         self.dbs = databases.Databases(ws.clone, gh.repo)
         self.stacks = stacks.load()
+        self.real_gh = shutil.which("gh")
 
     # --- loop -------------------------------------------------------------------
 
@@ -169,7 +172,7 @@ class Office:
             max_new=str(max(1, self.cfg.max_open_practices - len(open_practices))),
         )
         self.last_practices = datetime.now(UTC)
-        result = self.in_clone("pm", render("pm_practices", values))
+        result = self.in_clone("pm", render("pm_practices", values), issue.number)
         verdict = self.accept(issue, task, result, {"done"})
         filed = len(verdict.new_issues) if verdict else 0
         self.gh.comment(issue.number, f"Practices review: {filed} suggestion(s) filed.\n"
@@ -205,6 +208,7 @@ class Office:
                 self.loop(exit_when_idle)
             return
         self.ws.acquire_pidfile()
+        ghshim.install()
         previous = {sig: signal.signal(sig, self.on_signal)
                     for sig in (signal.SIGINT, signal.SIGTERM)}
         try:
@@ -388,21 +392,31 @@ class Office:
         prefix = databases.prefix_for(self.gh.repo, issue.number)
         try:
             return run_agent(role, prompt, path, self.cfg, exclusive=True,
-                             env={"OFFICE_DB_PREFIX": prefix})
+                             env={**self.agent_env(role, issue.number),
+                                  "OFFICE_DB_PREFIX": prefix})
         finally:
             dropped = self.dbs.drop(prefix)
             if dropped:
                 log.info("#%s: dropped the %s's databases: %s", issue.number, role,
                          ", ".join(dropped))
 
-    def in_clone(self, role: str, prompt: str) -> AgentResult:
+    def in_clone(self, role: str, prompt: str, issue: int) -> AgentResult:
         self.ws.update_default_branch()
-        return run_agent(role, prompt, self.ws.clone, self.cfg)
+        return run_agent(role, prompt, self.ws.clone, self.cfg,
+                         env=self.agent_env(role, issue))
+
+    def agent_env(self, role: str, issue: int) -> dict[str, str]:
+        """Who the agent is, and the `gh` wrapper that signs what it posts with that."""
+        env = {"OFFICE_AGENT_ROLE": role, "OFFICE_ISSUE": str(issue)}
+        if self.real_gh:
+            env["OFFICE_REAL_GH"] = self.real_gh
+            env["PATH"] = f"{ghshim.BIN}{os.pathsep}{os.environ.get('PATH', '')}"
+        return env
 
     def do_triage(self, issue: Issue, task: Task) -> None:
         if issue.status is None:
             self.gh.set_status(issue, L.TRIAGE)
-        result = self.in_clone("pm", render("pm", self.values(issue)))
+        result = self.in_clone("pm", render("pm", self.values(issue)), issue.number)
         verdict = self.accept(issue, task, result,
                               {"ready", "design", "blocked", "close", "waiting"})
         if not verdict:
@@ -417,7 +431,7 @@ class Office:
             log.info("#%s closed by the PM: %s", issue.number, verdict.summary[:200])
 
     def do_design(self, issue: Issue, task: Task) -> None:
-        result = self.in_clone("designer", render("designer", self.values(issue)))
+        result = self.in_clone("designer", render("designer", self.values(issue)), issue.number)
         verdict = self.accept(issue, task, result, {"ready", "blocked", "waiting"})
         if verdict and verdict.outcome == "ready":
             self.advance(issue, L.READY, verdict)
@@ -556,7 +570,7 @@ class Office:
                          for f in shots)
 
     def do_resolve_blocker(self, issue: Issue, task: Task) -> None:
-        result = self.in_clone("pm", render("pm_blocker", self.values(issue)))
+        result = self.in_clone("pm", render("pm_blocker", self.values(issue)), issue.number)
         verdict = self.accept(issue, task, result, {"resolved", "blocked"}, file_blocker=False)
         if not verdict:
             return

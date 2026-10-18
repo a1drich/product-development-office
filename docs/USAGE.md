@@ -85,7 +85,8 @@ Settings such as concurrency per role (`limits`), poll intervals and the claim t
    - **GitHub notifications** show progress comments, PRs, and the changed screens after each merge
    - **`office plan owner/name`** shows, in a second terminal, what every open issue is waiting for
 4. **Answer what's waiting:** blockers and practice suggestions, each in under a minute (see below).
-5. **Stop it** with Ctrl-C (or `office stop owner/name`) whenever you like. It finishes what's running first. `office start` resumes where it left off.
+5. **Tell the office's posts from yours.** The office uses your GitHub login, so its comments show your name. Each one ends with a line naming the role that wrote it, such as `🤖 Reviewer (Codex) · product development office` (details in [Architecture](ARCHITECTURE.md)).
+6. **Stop it** with Ctrl-C (or `office stop owner/name`) whenever you like. It finishes what's running first. `office start` resumes where it left off.
 
 ## Building a feature
 
