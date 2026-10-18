@@ -102,7 +102,8 @@ The docs are the product until the code exists, and afterwards they are what the
   | `README.md` | The goal, status, quick start, target stack summary, core principles, and the index |
   | `docs/HOW-IT-WORKS.md` | The agent loop and the delivery workflow, as diagrams |
   | `docs/USAGE.md` | Commands, configuration, stop and resume, day-to-day use, switching projects |
-  | `docs/WORKFLOW.md` | Roles, labels, blockers, dependencies, practice suggestions, the stop condition |
+  | `docs/WORKFLOW.md` | Roles, the flow, blockers, dependencies, practice suggestions, the stop condition |
+  | `docs/LABELS.md` | Every label: meaning, color, who sets and removes it, repo labels honored. Kept in sync with `office/labels.py` by a test. |
   | `docs/TESTING.md` | How changes are verified, UI and UX testing, and testing the office |
   | `docs/DOCS-SITE.md` | The target's MkDocs site and user manual |
   | `docs/ARCHITECTURE.md` | Modules, claims, cleanup, billing rules, context separation |

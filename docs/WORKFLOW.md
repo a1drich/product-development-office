@@ -31,23 +31,7 @@ Issue labels drive the workflow. The orchestrator polls the target repo, finds i
 
 ## Labels
 
-| Label | Meaning |
-|---|---|
-| `status:triage` | New or unscoped. The PM needs to write acceptance criteria and a priority. |
-| `status:design` | Needs UX/UI work before engineering. |
-| `status:ready` | Fully specified; an engineer can pick it up. |
-| `status:in-progress` | An engineer is working on it (the issue is assigned to that agent). |
-| `status:in-review` | A PR is open and waiting for Codex review. |
-| `status:testing` | The PR is approved and waiting for Codex testing. |
-| `status:done` | Verified locally and merged by the tester. |
-| `blocked:human` | Waiting for a human decision. Agents skip it until the label is removed. A repo's existing `blocked` label is treated the same way. |
-| `office:blocker` | A decision issue the office filed. Also carries `blocked:human` until answered. |
-| `office:status` | The single "Office status" issue, where the office lists everything waiting on a human |
-| `office:waiting` | Waiting for other issues to close (for example, a feature that builds on an unmerged PR). Requeued automatically once they close, with no human needed. |
-| `office:practice` | A suggested improvement to how the repo is built or maintained (see [Practice suggestions](#practice-suggestions)) |
-| `priority:p0`..`p3` | Set by the PM; p0 is worked first. A repo's existing `P0`..`P3` labels count too. |
-
-An open issue with no status label is treated as `status:triage`, so issues filed by humans are picked up automatically.
+Labels drive everything: one status label per issue says where it is, and the office acts on any change in its next cycle. An open issue with no status label is treated as `status:triage`. Every label, who sets and removes it, and the repo labels the office also honors are in **[Labels](LABELS.md)**.
 
 ## Blockers
 

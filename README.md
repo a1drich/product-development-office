@@ -66,7 +66,8 @@ Each document has one scope. Start with **How it works**.
 |---|---|
 | [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) | The agent loop and the delivery workflow, with diagrams |
 | [docs/USAGE.md](docs/USAGE.md) | Installing and running the office, building a feature, steering work, switching projects |
-| [docs/WORKFLOW.md](docs/WORKFLOW.md) | The team, labels, blockers, dependencies, practice suggestions, the stop condition |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | The team, the flow, blockers, dependencies, practice suggestions, the stop condition |
+| [docs/LABELS.md](docs/LABELS.md) | Every GitHub label the office uses: meaning, who sets and removes it, and repo labels it honors |
 | [docs/TESTING.md](docs/TESTING.md) | How every change is verified (review, tests, UI and UX screenshots, CI) and how to test the office itself |
 | [docs/DOCS-SITE.md](docs/DOCS-SITE.md) | The MkDocs site and user manual every target repo delivers |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules, how they fit together, model and billing rules, context separation |
