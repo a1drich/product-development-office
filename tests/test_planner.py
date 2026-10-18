@@ -115,3 +115,11 @@ def test_repo_priority_labels():
     assert priority(issue(1, "P0")) == 0
     assert priority(issue(1, "priority:p2")) == 2
     assert priority(issue(1)) == 9
+
+
+def test_every_agent_task_kind_has_a_role():
+    from office.planner import ROLE_BY_KIND, Task
+
+    for kind in ["triage", "resolve_blocker", "practices", "design", "implement", "review", "test"]:
+        assert Task(kind, 1).role in {"pm", "designer", "engineer", "reviewer", "tester"}
+    assert set(ROLE_BY_KIND) >= {"practices"}

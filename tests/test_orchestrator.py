@@ -18,6 +18,8 @@ class FakeGitHub:
         self.prs = {}
         self.merged = []
         self.checks = (True, "")
+        self.files = {}
+        self.pr_comments = []
 
     def open_issues(self):
         return [i for i in self.issues.values() if i.state == "OPEN"]
@@ -52,6 +54,12 @@ class FakeGitHub:
 
     def pr_checks_passing(self, pr):
         return self.checks
+
+    def pr_files(self, pr):
+        return "abc123", self.files.get(pr, [])
+
+    def pr_comment(self, pr, body):
+        self.pr_comments.append((pr, body))
 
     def merge_pr(self, pr):
         self.merged.append(pr)
@@ -90,7 +98,7 @@ def make_office(tmp_path, monkeypatch):
         office = orchestrator.Office(Config(), gh, FakeWorkspace(tmp_path))
         queue = list(verdicts)
 
-        def fake_run_agent(role, prompt, cwd, cfg):
+        def fake_run_agent(role, prompt, cwd, cfg, exclusive=False):
             item = queue.pop(0)
             if isinstance(item, AgentResult):
                 return item
@@ -254,3 +262,57 @@ def test_practices_review_files_suggestions_and_records_the_run(make_office):
     office.execute(Task("practices", 1))
     assert any(i.title == "Practice: x" for i in gh.issues.values())
     assert "<!-- office:practices -->" in gh.issues[1].comments[-1].body
+
+
+def test_waiting_parks_the_issue_until_dependencies_close(make_office):
+    from datetime import timedelta
+
+    from office.planner import plan
+
+    office, gh = make_office(
+        [Issue(4, "form", "", {L.IN_REVIEW}), Issue(6, "cta", "", {L.READY})],
+        [Verdict("waiting", "needs #4's form", depends_on=[4])],
+    )
+    office.execute(Task("implement", 6))
+    assert {L.READY, L.WAITING} <= gh.issues[6].labels
+    assert not any(L.BLOCKER in i.labels for i in gh.issues.values())
+
+    def kinds():
+        now = datetime.now(UTC)
+        return [(t.kind, t.issue) for t in plan(gh.open_issues(), {}, Config().limits, set(),
+                                                 now, timedelta(hours=2))]
+
+    assert ("implement", 6) not in kinds() and ("unwait", 6) not in kinds()
+    gh.issues[4].state = "CLOSED"
+    assert ("unwait", 6) in kinds()
+    office.housekeeping(Task("unwait", 6))
+    assert L.WAITING not in gh.issues[6].labels
+    assert ("implement", 6) in kinds()
+
+
+def test_waiting_without_dependencies_is_a_failure(make_office):
+    office, gh = make_office([Issue(6, "x", "", {L.READY})], [Verdict("waiting", "?")])
+    office.execute(Task("implement", 6))
+    assert L.WAITING not in gh.issues[6].labels
+    assert FAILED_MARK in gh.issues[6].comments[-1].body
+
+
+def test_merge_posts_changed_screens_on_the_pr_and_status_issue(make_office):
+    office, gh = make_office([Issue(1, "Empty state", "", {L.TESTING})], [Verdict("pass", "ok")])
+    gh.prs[1] = {"number": 5}
+    gh.files[5] = ["templates/home.html", "docs/manual/screenshots/home-empty-mobile.png"]
+    office.execute(Task("test", 1))
+    pr, body = gh.pr_comments[0]
+    url = "https://github.com/acme/app/blob/abc123/docs/manual/screenshots/home-empty-mobile.png"
+    assert pr == 5 and f"{url}?raw=true" in body
+    status = next(i for i in gh.issues.values() if L.STATUS_ISSUE in i.labels)
+    assert "Screens changed by PR #5" in status.comments[-1].body
+    assert gh.merged == [5]
+
+
+def test_merge_without_screens_posts_nothing(make_office):
+    office, gh = make_office([Issue(1, "API", "", {L.TESTING})], [Verdict("pass", "ok")])
+    gh.prs[1] = {"number": 5}
+    gh.files[5] = ["notes/views.py"]
+    office.execute(Task("test", 1))
+    assert gh.pr_comments == [] and gh.merged == [5]

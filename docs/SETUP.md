@@ -47,6 +47,7 @@ unset ANTHROPIC_API_KEY OPENAI_API_KEY ANTHROPIC_AUTH_TOKEN
 git clone https://github.com/a1drich/product-development-office
 cd product-development-office
 uv sync
+uv run playwright install chromium           # once, for UI screenshots
 
 uv run office check acme/widget-app          # is the repo ready?
 uv run office start acme/widget-app --dry-run
@@ -69,6 +70,8 @@ The agents work best on a repo that follows the conventions below. A repo that a
 | Background jobs | [Celery](https://docs.celeryq.dev/) on [Redis](https://redis.io/), if needed |
 | Frontends | [Nuxt](https://nuxt.com/) or [Next.js](https://nextjs.org/), TypeScript, [Tailwind CSS](https://tailwindcss.com/) v4 |
 | Data | [Postgres](https://www.postgresql.org/) via [Docker Compose](https://docs.docker.com/compose/) |
+| Docs | [MkDocs](https://www.mkdocs.org/) with [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/): docs site, user manual and feature catalog |
+| UI testing | [Playwright](https://playwright.dev/), through `office shoot` |
 | Deploy | [Hetzner Cloud](https://www.hetzner.com/cloud/), [Traefik](https://doc.traefik.io/traefik/) v3, GitHub Actions |
 
 ### Layout
@@ -81,10 +84,23 @@ app/                 main web app          → app.example.com
 www/                 landing pages         → www.example.com
 docker-compose.yml   local Postgres + Redis
 deploy/              production compose, Traefik, deploy scripts
-docs/                product and technical docs
+docs/                MkDocs site: product and technical docs
+docs/manual/         user manual and feature catalog, with screenshots
+mkdocs.yml           the docs site
 .env.example         one env file for every app
 Makefile             every command an agent needs
 ```
+
+### Docs site and user manual
+
+`docs/` is an [MkDocs](https://www.mkdocs.org/) site (`mkdocs.yml`, Material theme), and it is delivered with every change:
+
+- `docs/manual/README.md` is the user manual and feature catalog: one section per feature or page, with desktop and mobile screenshots from `docs/manual/screenshots/`. The owner reviews the product through it.
+- `docs/manual/pages.json` lists the pages that `office shoot` screenshots and UX-checks.
+- `uvx --with mkdocs-material mkdocs build --strict` must pass. Add it to `make verify` so broken links and pages missing from the nav fail the build.
+- While the office runs, the site is served live at `http://127.0.0.1:8787` from the target's main clone, and refreshed after every merge. `office docs serve owner/name` serves it on its own.
+
+The [integration guide](INTEGRATION.md#add-the-docs-site-and-user-manual) has starter files.
 
 ### Files the agents read
 
@@ -92,6 +108,7 @@ Makefile             every command an agent needs
 |---|---|
 | `AGENTS.md` | Commands, architecture, conventions and rules, such as when to file a blocker and what never to touch. Every agent reads it first. |
 | `CLAUDE.md` | Just `@AGENTS.md`, so Claude Code reads the same file as Codex |
+| `mkdocs.yml`, `docs/manual/` | The docs site and user manual. Every role keeps it current. |
 | `PRODUCT.md`, `DESIGN.md` or `docs/design-system.md` | Who the users are and the visual system. The Designer works from and updates these. |
 | `docs/` | Strategy, specs, data model, decision log. Agents follow decisions written here instead of "fixing" them. |
 | `docs/BACKLOG.md` (optional) | An index of what's done, what agents can build now and what's blocked |
@@ -112,7 +129,8 @@ make test      # backend tests
 make lint      # ruff
 make typecheck # tsc / vue-tsc over every frontend (frontend builds often skip type checking)
 make lint-fe   # eslint over every frontend
-make verify    # lint + test + typecheck + lint-fe: the definition of done
+make docs      # mkdocs build --strict
+make verify    # lint + test + typecheck + lint-fe + docs: the definition of done
 make ui-check  # optional: headless smoke test of the running app at phone width
 ```
 
@@ -226,6 +244,7 @@ Patterns that work well:
 - Frontends are static builds served by nginx, so the only long-running Python processes are the API and the workers. Public build-time variables (such as `NUXT_PUBLIC_*` or `NEXT_PUBLIC_*`) are baked into the image, so changing one needs a rebuild.
 - An HSTS middleware is attached to every router, and the bare domain redirects to `www` with a `redirectregex` middleware.
 - Production secrets live only in `.env` files on the server, never in git.
+- **The docs site can ship the same way.** `mkdocs build` produces static files, so an nginx container serving `site/` behind Traefik (for example at `docs.example.com`) publishes the manual. Like any deploy, publishing it is a human decision.
 
 ### 4. Release by git tag
 

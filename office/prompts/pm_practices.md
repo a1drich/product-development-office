@@ -21,6 +21,7 @@ Review how this repo is built and maintained, and suggest the few improvements t
 - **Tests:** what risky logic is untested, and are there flaky patterns, such as shared databases or order dependence?
 - **CI and safety:** does CI match the verify command? Branch protection, secrets in the repo, migration hygiene, dependency pinning.
 - **Local development:** can a fresh clone run everything offline, with external services mocked and demo data seeded?
+- **The docs site and user manual:** is there an MkDocs site (`mkdocs.yml`) that builds with `--strict`, a `docs/manual/README.md` that covers every feature and page the app has, and a `docs/manual/pages.json` listing them? Look for features with no manual section, stale screenshots, and manual text that no longer matches the app.
 - **Design system:** are `PRODUCT.md` and `DESIGN.md` present and current, and is impeccable committed?
 - **Conventions for the preferred stack:** Django + DRF with uv and ruff, TypeScript frontends with Tailwind, Postgres via docker compose, deploys to Hetzner behind Traefik.
 

@@ -24,6 +24,10 @@ def test_ready_repo_passes(tmp_path):
     (tmp_path / "DESIGN.md").write_text("x")
     (tmp_path / ".claude" / "skills" / "impeccable").mkdir(parents=True)
     (tmp_path / ".env.example").write_text("")
+    (tmp_path / "mkdocs.yml").write_text("site_name: x")
+    (tmp_path / "docs" / "manual").mkdir()
+    (tmp_path / "docs" / "manual" / "README.md").write_text("# Manual")
+    (tmp_path / "docs" / "manual" / "pages.json").write_text('{"pages": []}')
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / ".github" / "workflows" / "ci.yml").write_text("")
     assert worst(check_files(tmp_path)) == PASS

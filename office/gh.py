@@ -179,6 +179,11 @@ class GitHub:
             return True, ""
         return False, (res.stdout or res.stderr).strip()
 
+    def pr_files(self, pr: int) -> tuple[str, list[str]]:
+        """The PR's head commit and the paths it changes."""
+        data = self._gh_json("pr", "view", str(pr), "--json", "headRefOid,files")
+        return data["headRefOid"], [f["path"] for f in data.get("files", [])]
+
     def merge_pr(self, pr: int) -> None:
         self._gh("pr", "merge", str(pr), "--squash", "--delete-branch")
 

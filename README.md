@@ -19,6 +19,7 @@ It expects these repo conventions:
 - `AGENTS.md` (imported by `CLAUDE.md`) and `docs/` describe the product, and every agent reads them first.
 - A single verification command (`make verify` or `npm run verify`) is the definition of done.
 - The design system lives in the repo (`DESIGN.md` or `docs/design-system.md`), and the [impeccable](https://github.com/pbakaus/impeccable) design skill is committed to it.
+- An [MkDocs](https://www.mkdocs.org/) site over `docs/`, with a user manual and feature catalog at `docs/manual/` (see [The user manual](#the-user-manual-and-docs-site)).
 - Releases and deploys are always a human decision. Agents never run them.
 
 ## Documentation
@@ -44,10 +45,10 @@ It expects these repo conventions:
 | Role | Runs on | Responsibilities |
 |---|---|---|
 | **Product Manager** | Claude Code (Claude subscription) | Reads the repo and its open issues, writes and keeps the backlog, breaks epics into scoped issues with acceptance criteria, sets priorities, files blockers for human decisions, and decides when an issue is done. |
-| **Designer** | Claude Code (Claude subscription) + [impeccable](https://github.com/pbakaus/impeccable) | Uses impeccable's `shape` command to turn product issues into markdown design documents (flows, screens, states, copy, tokens and components) with an implementation prompt for engineers, and posts them on the issue before engineering starts. |
+| **Designer** | Claude Code (Claude subscription) + [impeccable](https://github.com/pbakaus/impeccable) | Uses impeccable's `shape` command to turn product issues into markdown design documents (flows, screens, states, copy, tokens and components). Each one includes the user-manual entry, the screens to capture and an implementation prompt for engineers, and is posted on the issue before engineering starts. |
 | **Engineer** (1..n) | Claude Code (Claude subscription) | Picks up `ready` issues, works in an isolated git worktree, implements the change (using impeccable for any UI work), runs the verify command and opens a PR linked to the issue. |
 | **Reviewer** | Codex CLI (ChatGPT/Codex subscription) | Reviews every PR for correctness, security and maintainability. It either approves or requests changes, and changes go back to an engineer. |
-| **Tester** | Codex CLI (ChatGPT/Codex subscription) | Checks out approved PRs locally and verifies them against the acceptance criteria: merges in the base branch, runs the full verify command, writes missing tests, exercises the change and runs the impeccable detector on UI changes. If it passes, the office merges the PR; otherwise it goes back to an engineer, and any bugs found are filed as issues. |
+| **Tester** | Codex CLI (ChatGPT/Codex subscription) | Checks out approved PRs locally and verifies them against the acceptance criteria: merges in the base branch, runs the full verify command, writes missing tests, exercises the change, screenshots and UX-checks every page with [Playwright](https://playwright.dev/) (`office shoot`), checks the user manual and runs the impeccable detector on UI changes. If it passes, the office merges the PR; otherwise it goes back to an engineer, and any bugs found are filed as issues. |
 
 ## Getting started
 
@@ -88,13 +89,15 @@ Startup steps:
 |---|---|
 | `office check [repo] [--run-verify] [--file-issues]` | Checks a repo against the [integration checklist](docs/INTEGRATION.md). `--run-verify` also runs its verify command on a fresh clone. `--file-issues` files one `status:triage` issue per gap, so fixing readiness becomes the office's first work. |
 | `office labels [repo]` | Creates the office labels |
+| `office shoot --base-url URL` | Run in a target repo with its app running: screenshots every page in `docs/manual/pages.json` at desktop and mobile width, and reports UX problems |
+| `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 
 Settings such as concurrency per role, poll intervals and the claim timeout can be overridden in `.office/config.json`. The defaults are in `office/config.py`.
 
 ### Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) (it installs Python 3.12+ for you)
+- [uv](https://docs.astral.sh/uv/) (it installs Python 3.12+ for you). After `uv sync`, run `uv run playwright install chromium` once for screenshots.
 - [GitHub CLI](https://cli.github.com/) (`gh`), logged in with access to the target repo
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code), logged in with a Claude subscription
 - [Codex CLI](https://github.com/openai/codex), logged in with a ChatGPT subscription
@@ -130,6 +133,7 @@ Issue labels drive the workflow. The orchestrator polls the target repo, finds i
 | `blocked:human` | Waiting for a human decision. Agents skip it until the label is removed. A repo's existing `blocked` label is treated the same way. |
 | `office:blocker` | A decision issue the office filed. Also carries `blocked:human` until answered. |
 | `office:status` | The single "Office status" issue, where the office lists everything waiting on a human |
+| `office:waiting` | Waiting for other issues to close (for example, a feature that builds on an unmerged PR). Requeued automatically once they close, with no human needed. |
 | `office:practice` | A suggested improvement to how the repo is built or maintained (see [Practice suggestions](#practice-suggestions)) |
 | `priority:p0`..`p3` | Set by the PM; p0 is worked first. A repo's existing `P0`..`P3` labels count too. |
 
@@ -162,6 +166,18 @@ Option 2 for v1. Revisit after launch.
 The blocked issue also gets `blocked:human` and a comment linking the blocker. To answer, comment on the blocker with your decision and remove its `blocked:human` label. On the next cycle the PM reads the answer and updates the issues listed under "Blocks". The office then unblocks them and closes the blocker.
 
 If an agent fails on the same issue three times in a row, for example by crashing, timing out or returning no verdict, the office files a blocker for it instead of retrying forever.
+
+### The user manual and docs site
+
+Every target repo delivers an MkDocs site, and its centerpiece is the **user manual and feature catalog** at `docs/manual/README.md`. It has one section per feature or page, saying what it's for and how to use it, with desktop and mobile screenshots. It is how you review what the office builds, and it doubles as the product's user manual.
+
+- **Who maintains it:**
+  - The PM puts "manual and screenshots updated" in the acceptance criteria of anything a user sees, and its practices review flags features with no manual section or stale screenshots.
+  - The Designer drafts each feature's manual entry and the screens to capture.
+  - Engineers update the manual, `docs/manual/pages.json` and any other docs pages they make stale, in the same PR as the code.
+  - The tester fails a PR whose manual is missing or wrong, or whose `mkdocs build --strict` fails.
+- **Always live:** while `office start` runs, it serves the site from the target's main clone at `http://127.0.0.1:8787`, and refreshes the clone after every merge. MkDocs live-reloads, so the site always shows the latest manual and screenshots. If the server dies, the office restarts it. `office docs serve owner/name` serves it on its own.
+- **Screenshots on PRs:** for UI changes, the tester runs `office shoot`, which uses Playwright to capture every page in `pages.json` at 1280px and 360px. It also checks objectively for failed loads, console errors, failed requests, missing expected text, sideways scrolling on a phone and images without alt text. The tester commits the screenshots to the PR, where GitHub shows image diffs. Before merging, the office posts the changed screens on the PR. After merging, it posts them on the "Office status" issue for you to review.
 
 ### Practice suggestions
 
@@ -205,7 +221,9 @@ These rules are hard requirements, and `office start` enforces them:
 | `office/agents.py` | Runs `claude -p` or `codex exec` in the right folder and parses the JSON verdict |
 | `office/prompts/` | One prompt per role, plus the shared verdict format |
 | `office/gh.py` | Thin adapter over `gh`. The orchestrator touches GitHub only through it. |
-| `office/workspace.py` | The main clone, plus one git worktree per issue on branch `office/issue-N` |
+| `office/workspace.py` | The main clone, plus one git worktree per issue on branch `office/issue-N`. Git calls are serialized and retried on lock contention, because worktrees share refs. |
+| `office/shoot.py` | `office shoot`: Playwright screenshots and UX checks |
+| `office/docs_server.py` | Keeps the target's MkDocs site served and current while the office runs |
 
 How it fits together:
 
@@ -213,6 +231,8 @@ How it fits together:
 - **Claims.** Before an engineer starts, the office assigns the issue, sets `status:in-progress` and posts a claim comment. A claim older than `claim_ttl_minutes` (two hours by default) with no agent running is released back to `status:ready`. That covers crashed or stopped runs.
 - **Reviews are PR comments.** The office runs under your GitHub account, which can't approve its own PRs. The reviewer posts its findings as a PR comment, and its verdict decides whether the issue moves on.
 - **Merging.** After a `pass` verdict, the office waits up to 30 minutes for the PR's CI checks, then squash-merges and deletes the branch. If CI fails, the issue goes back to an engineer.
+- **Cleanup.** When an agent finishes in an issue's worktree, the office stops anything it left running there, such as a dev server. The shared main clone is never cleaned, because other agents may be working in it.
+- **Dependencies.** An agent that can't continue until another issue lands returns `waiting` with the issue numbers. That isn't a human decision, so the office parks the issue with `office:waiting` and requeues it when those issues close.
 - **Usage limits.** When an agent reports a usage limit, its role pauses for `rate_limit_pause_minutes` and the other roles keep working.
 
 ## Inspiration
@@ -232,6 +252,8 @@ Similar projects this design borrows from:
 - **Runs on:** a local machine, as a long-running process. No server and no GitHub Actions.
 - **Merging:** agents merge PRs themselves, but only after the change has been fully tested locally: the full test suite passes and the Codex tester has verified the acceptance criteria. CI must also pass when the target repo has CI.
 - **Design deliverables:** prompts and design documents (markdown) only. No Figma, no image mockups.
+- **Delivery includes docs:** every target repo has an MkDocs site with a user manual and feature catalog, kept current in every PR and served live while the office runs.
+- **UI testing:** [Playwright](https://playwright.dev/) screenshots and objective UX checks, posted on PRs.
 - **Design tool:** the [impeccable](https://github.com/pbakaus/impeccable) skill, committed to each target repo. The Designer uses `shape` to plan, engineers use it for UI work, and the tester runs its `detect` command on changed UI files.
 
 ## License

@@ -22,6 +22,7 @@ The office can work on a repo once every box below is ticked. The steps that fol
 - [ ] Tests use their own database, so parallel agents don't collide
 - [ ] The product and design docs live in the repo
 - [ ] The impeccable design skill is committed to the repo
+- [ ] An MkDocs site with a user manual and feature catalog at `docs/manual/`
 - [ ] Issues are on and the office labels exist
 - [ ] CI runs the same checks as the verify command
 - [ ] Human-only actions (deploys, secrets, money) are written down
@@ -126,6 +127,49 @@ git commit -m "Add the impeccable design skill"
 
 If `PRODUCT.md` or `DESIGN.md` is missing, impeccable can write them: in Claude Code, ask it to run impeccable's `init` command (product context) and its `document` command (the design system, generated from the existing code).
 
+### Add the docs site and user manual
+
+The office delivers an MkDocs site with every change, and its user manual is how you review what was built. Set up the skeleton once. After that, the agents keep it current.
+
+`mkdocs.yml`:
+
+```yaml
+site_name: Widget App
+theme:
+  name: material
+nav:
+  - Home: README.md
+  - User manual: manual/README.md
+  - Decisions: decisions.md
+```
+
+`docs/manual/README.md`, the feature catalog and user manual:
+
+```markdown
+# User manual
+
+## Home page
+
+Lists your notes, newest first. Tap a note to open it.
+
+| Desktop | Mobile |
+|---|---|
+| ![Home, desktop](screenshots/home-desktop.png) | ![Home, mobile](screenshots/home-mobile.png) |
+```
+
+`docs/manual/pages.json`, the pages to screenshot (`expect` is text that must be visible):
+
+```json
+{"pages": [{"name": "home", "path": "/", "expect": "Notes"}]}
+```
+
+Then capture the first screenshots with the app running, and make the docs build part of the verify command:
+
+```bash
+uv run --project /path/to/product-development-office office shoot --base-url http://127.0.0.1:8000
+uvx --with mkdocs-material mkdocs build --strict   # add to `make verify`
+```
+
 ## 5. Set up GitHub
 
 ### Labels
@@ -192,6 +236,7 @@ While the office runs:
 - **Answering a blocker:** comment on the blocker issue with your decision and remove `blocked:human`. The PM picks it up on the next cycle.
 - **Steering:** open an issue, or edit an issue's labels or priority. The office keeps no state outside GitHub, so your changes take effect immediately.
 - **Practice suggestions:** the office keeps filing `Practice:` issues with improvements for the repo, such as stale docs, missing tests or a slow verify command. They wait for you: remove `blocked:human` to accept one, or close it to decline.
+- **Reviewing the product:** while the office runs, the target's docs site is live at `http://127.0.0.1:8787` and refreshes after every merge. Changed screens are posted on each PR and on the "Office status" issue.
 - **Seeing what's waiting on you:** when the office goes idle, it lists every blocked issue in the "Office status" issue.
 - **Pausing:** stop the `office` process with Ctrl-C. Any issue left at `status:in-progress` is released when its claim expires (two hours by default).
 

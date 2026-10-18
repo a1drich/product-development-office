@@ -48,7 +48,8 @@ def test_failure_without_verdict_has_error():
 def test_prompts_render_without_leftover_placeholders(role):
     values = {k: "X" for k in
               ["repo", "number", "title", "body", "comments", "verify", "branch", "base", "pr",
-               "pr_context", "findings", "open_practices", "max_new"]}
+               "pr_context", "findings", "open_practices", "max_new", "shoot",
+               "docs_build"]}
     text = render(role, values)
     assert "{{" not in text
     assert '"outcome"' in text  # the shared verdict instructions are included
@@ -92,3 +93,27 @@ def test_clean_env_strips_api_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-oai")
     env = clean_env()
     assert "ANTHROPIC_API_KEY" not in env and "OPENAI_API_KEY" not in env
+
+
+def test_leftover_pids_finds_a_process_started_in_the_folder(tmp_path):
+    import subprocess
+    import sys
+    import time
+
+    from office.agents import leftover_pids, stop_leftovers
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], cwd=tmp_path)
+    try:
+        time.sleep(0.3)
+        assert proc.pid in leftover_pids(tmp_path)
+        stop_leftovers(tmp_path)
+        assert proc.wait(timeout=5) != 0
+    finally:
+        proc.kill()
+
+
+def test_leftover_pids_ignores_sibling_folders(tmp_path):
+    from office.agents import _under
+
+    assert _under("/w/app/sub", "/w/app")
+    assert not _under("/w/app-worktrees/issue-1", "/w/app")

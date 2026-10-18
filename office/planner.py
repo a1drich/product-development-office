@@ -11,13 +11,15 @@ from office.gh import Issue
 
 CLAIM_MARK = "<!-- office:claim -->"
 FAILED_MARK = "<!-- office:failed -->"
+DEPENDS_MARK = re.compile(r"<!-- office:depends ([\d, ]+) -->")
 
 # Housekeeping kinds need no agent; the orchestrator does them directly.
-HOUSEKEEPING = {"release", "close_done"}
+HOUSEKEEPING = {"release", "close_done", "unwait"}
 
 ROLE_BY_KIND = {
     "triage": "pm",
     "resolve_blocker": "pm",
+    "practices": "pm",
     "design": "designer",
     "implement": "engineer",
     "review": "reviewer",
@@ -63,8 +65,23 @@ def failures(issue: Issue) -> int:
     return count
 
 
-def task_for(issue: Issue, now: datetime, claim_ttl: timedelta) -> Task | None:
+def dependencies(issue: Issue) -> list[int]:
+    """The issues the latest waiting comment says this one depends on."""
+    for c in reversed(issue.comments):
+        m = DEPENDS_MARK.search(c.body)
+        if m:
+            return [int(n) for n in re.findall(r"\d+", m.group(1))]
+    return []
+
+
+def task_for(
+    issue: Issue, now: datetime, claim_ttl: timedelta, open_numbers: set[int] | None = None
+) -> Task | None:
     if L.STATUS_ISSUE in issue.labels:
+        return None
+    if L.WAITING in issue.labels:
+        if open_numbers is not None and not set(dependencies(issue)) & open_numbers:
+            return Task("unwait", issue.number, priority(issue))
         return None
     p = priority(issue)
     if issue.is_blocker:
@@ -108,11 +125,12 @@ def plan(
     for role in running.values():
         busy[role] = busy.get(role, 0) + 1
 
+    open_numbers = {i.number for i in issues}
     candidates = []
     for issue in issues:
         if issue.number in running:
             continue
-        task = task_for(issue, now, claim_ttl)
+        task = task_for(issue, now, claim_ttl, open_numbers)
         if task is None:
             continue
         candidates.append(task)
@@ -132,7 +150,8 @@ def plan(
 
 
 def actionable(issues: list[Issue], now: datetime, claim_ttl: timedelta) -> bool:
-    return any(task_for(i, now, claim_ttl) for i in issues)
+    open_numbers = {i.number for i in issues}
+    return any(task_for(i, now, claim_ttl, open_numbers) for i in issues)
 
 
 def blocks_section(body: str) -> list[int]:

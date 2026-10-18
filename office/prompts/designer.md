@@ -17,9 +17,14 @@ Use the **impeccable** design skill for this work. Run its setup first (its `con
 ## What to do
 
 1. Use impeccable's `shape` command to plan the UX and UI for this issue before any code exists: flows, screens, states (empty, loading, error), copy, and which existing tokens and components to use.
-2. Your deliverable is markdown only: no images, no Figma, no code changes. Post it as a comment on the issue with `gh issue comment {{number}} --repo {{repo}} --body-file <file>`, under the heading `## Design`. End it with a short `### Implementation prompt` that an engineer can follow step by step.
+2. Your deliverable is markdown only: no images, no Figma, no code changes. Post it as a comment on the issue with `gh issue comment {{number}} --repo {{repo}} --body-file <file>`, under the heading `## Design`. Then add:
+   - `### Manual entry`: the user-manual section for this feature, written for end users (what it's for, how to use it, and any states such as empty or error), ready to paste into `docs/manual/README.md`.
+   - `### Screens to capture`: the entries to add to `docs/manual/pages.json` (`name`, `path`, the `expect` text, and how to reach each state, for example with seeded demo data).
+   - `### Implementation prompt`: steps an engineer can follow.
 3. Stay inside the existing design system unless the issue asks for a redesign. If the design needs a new visual direction, a brand decision or copy only the owner can write, use outcome `blocked`.
 
-Outcomes: `ready`, `blocked`.
+If the design can't be done until another open issue lands, use outcome `waiting` with `depends_on`.
+
+Outcomes: `ready`, `waiting`, `blocked`.
 
 {{verdict}}

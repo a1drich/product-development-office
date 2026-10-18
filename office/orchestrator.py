@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -11,7 +10,8 @@ from datetime import UTC, datetime, timedelta
 from office import labels as L
 from office import planner, readiness
 from office.agents import AgentResult, Verdict, render, run_agent
-from office.config import Config
+from office.config import ROOT, Config
+from office.docs_server import DocsServer
 from office.gh import GitHub, Issue, branch_name
 from office.planner import CLAIM_MARK, FAILED_MARK, Task
 from office.readiness import verify_command
@@ -22,6 +22,7 @@ log = logging.getLogger("office")
 MAX_FAILURES = 3
 CI_WAIT_SECONDS = 30 * 60
 STATUS_TITLE = "Office status"
+SCREENSHOT_DIR = "docs/manual/screenshots/"
 
 
 def mark(name: str) -> str:
@@ -57,9 +58,9 @@ class Office:
         self.running: dict[int, str] = {}
         self.futures: dict[Future, Task] = {}
         self.paused_until: dict[str, datetime] = {}
-        self.clone_lock = threading.Lock()
         self.last_summary = ""
         self.status_issue: int | None = None
+        self.docs = DocsServer(ws.clone, cfg.docs_port)
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
 
@@ -150,7 +151,7 @@ class Office:
         ttl = timedelta(minutes=self.cfg.claim_ttl_minutes)
         counts: dict[str, int] = {}
         for i in issues:
-            t = planner.task_for(i, now, ttl)
+            t = planner.task_for(i, now, ttl, {x.number for x in issues})
             key = t.kind if t else "waiting on a human" if i.blocked else "in progress / other"
             counts[key] = counts.get(key, 0) + 1
         summary = ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
@@ -160,16 +161,24 @@ class Office:
         workers = sum(self.cfg.limits.values()) + 1
         with ThreadPoolExecutor(max_workers=workers) as pool:
             self.pool = pool
-            while True:
-                self.reap()
-                started = self.cycle()
-                if self.dry_run:
-                    return
-                idle = not started and not self.running
-                if idle and exit_when_idle:
-                    log.info("nothing left to act on; exiting")
-                    return
-                time.sleep(self.cfg.idle_poll_seconds if idle else self.cfg.poll_seconds)
+            try:
+                self.loop(exit_when_idle)
+            finally:
+                self.docs.stop()
+
+    def loop(self, exit_when_idle: bool) -> None:
+        while True:
+            self.reap()
+            if not self.dry_run:
+                self.docs.ensure()
+            started = self.cycle()
+            if self.dry_run:
+                return
+            idle = not started and not self.running
+            if idle and exit_when_idle:
+                log.info("nothing left to act on; exiting")
+                return
+            time.sleep(self.cfg.idle_poll_seconds if idle else self.cfg.poll_seconds)
 
     def start(self, task: Task) -> None:
         if task.kind in planner.HOUSEKEEPING:
@@ -203,6 +212,11 @@ class Office:
             self.gh.set_status(issue, L.READY)
             note = f"Released a stale claim; back to ready.\n{mark('release')}"
             self.gh.comment(issue.number, note)
+        elif task.kind == "unwait":
+            self.gh.edit_labels(issue.number, remove=[L.WAITING])
+            deps = ", ".join(f"#{n}" for n in planner.dependencies(issue)) or "its dependencies"
+            self.gh.comment(issue.number, f"{deps} closed; back in the queue.\n{mark('unwait')}")
+            log.info("#%s no longer waiting", issue.number)
         elif task.kind == "close_done":
             self.gh.close_issue(issue.number, f"Done.\n{mark('closed')}")
 
@@ -215,10 +229,12 @@ class Office:
         if summary == self.last_summary:
             return
         self.last_summary = summary
+        docs = (f"\n\nThe manual and feature catalog (live while the office runs): "
+                f"{self.docs.url}" if self.docs.available else "")
         body = (
             "The office has nothing it can act on. These issues are waiting on a human "
             "(office decisions first, then practice suggestions, then by priority):\n\n"
-            f"{summary}\n\n{mark('status')}"
+            f"{summary}{docs}\n\n{mark('status')}"
         )
         log.info("idle. open blockers:\n%s", summary)
         self.gh.edit_body(self.ensure_status_issue(), body)
@@ -240,19 +256,21 @@ class Office:
             "verify": self.verify,
             "branch": branch_name(issue.number),
             "base": self.ws.default_branch(),
+            "shoot": f"uv run --project {ROOT} office shoot",
+            "docs_build": "uvx --with mkdocs-material mkdocs build --strict",
             **extra,
         }
 
     def in_clone(self, role: str, prompt: str) -> AgentResult:
-        with self.clone_lock:
-            self.ws.update_default_branch()
+        self.ws.update_default_branch()
         return run_agent(role, prompt, self.ws.clone, self.cfg)
 
     def do_triage(self, issue: Issue, task: Task) -> None:
         if issue.status is None:
             self.gh.set_status(issue, L.TRIAGE)
         result = self.in_clone("pm", render("pm", self.values(issue)))
-        verdict = self.accept(issue, task, result, {"ready", "design", "blocked", "close"})
+        verdict = self.accept(issue, task, result,
+                              {"ready", "design", "blocked", "close", "waiting"})
         if not verdict:
             return
         if verdict.outcome == "ready":
@@ -262,10 +280,11 @@ class Office:
         elif verdict.outcome == "close":
             note = f"Closed by the PM: {verdict.summary}\n{mark('closed')}"
             self.gh.close_issue(issue.number, note)
+            log.info("#%s closed by the PM: %s", issue.number, verdict.summary[:200])
 
     def do_design(self, issue: Issue, task: Task) -> None:
         result = self.in_clone("designer", render("designer", self.values(issue)))
-        verdict = self.accept(issue, task, result, {"ready", "blocked"})
+        verdict = self.accept(issue, task, result, {"ready", "blocked", "waiting"})
         if verdict and verdict.outcome == "ready":
             self.advance(issue, L.READY, verdict)
 
@@ -282,8 +301,8 @@ class Office:
         )
         path = self.ws.worktree(issue.number)
         prompt = render("engineer", self.values(issue, pr_context=pr_context))
-        result = run_agent("engineer", prompt, path, self.cfg)
-        verdict = self.accept(issue, task, result, {"opened", "blocked", "failed"},
+        result = run_agent("engineer", prompt, path, self.cfg, exclusive=True)
+        verdict = self.accept(issue, task, result, {"opened", "blocked", "failed", "waiting"},
                               fallback_status=L.READY)
         if not verdict:
             return
@@ -311,7 +330,7 @@ class Office:
             return
         path = self.ws.worktree(issue.number)
         prompt = render("reviewer", self.values(issue, pr=str(pr["number"])))
-        result = run_agent("reviewer", prompt, path, self.cfg)
+        result = run_agent("reviewer", prompt, path, self.cfg, exclusive=True)
         verdict = self.accept(issue, task, result, {"approve", "changes", "blocked"})
         if not verdict:
             return
@@ -326,7 +345,7 @@ class Office:
             return
         path = self.ws.worktree(issue.number)
         prompt = render("tester", self.values(issue, pr=str(pr["number"])))
-        result = run_agent("tester", prompt, path, self.cfg)
+        result = run_agent("tester", prompt, path, self.cfg, exclusive=True)
         verdict = self.accept(issue, task, result, {"pass", "fail", "blocked"})
         if not verdict:
             return
@@ -348,12 +367,34 @@ class Office:
                              f"{detail[-1500:]}\n```")
                 return
             time.sleep(60)
+        screens = self.screens_markdown(pr)
+        if screens:
+            self.gh.pr_comment(pr, f"## Screens in this change\n\n{screens}\n{mark('screens')}")
         self.gh.merge_pr(pr)
         self.advance(issue, L.DONE, verdict, f"Tested and merged PR #{pr}")
         self.ws.remove_worktree(issue.number)
+        # Refresh the main clone, so the live docs site shows the merged change.
+        self.ws.update_default_branch()
+        if screens:
+            self.gh.comment(
+                self.ensure_status_issue(),
+                f"### Screens changed by PR #{pr} (#{issue.number} {issue.title})\n\n"
+                f"Please review them, and the manual at {self.docs.url}.\n\n{screens}\n"
+                f"{mark('screens')}",
+            )
         fresh = self.gh.issue(issue.number)
         if fresh.state == "OPEN":
             self.gh.close_issue(issue.number)
+
+    def screens_markdown(self, pr: int) -> str:
+        """Image grid of the manual screenshots a PR adds or changes."""
+        sha, files = self.gh.pr_files(pr)
+        shots = sorted(f for f in files if f.startswith(SCREENSHOT_DIR) and f.endswith(".png"))
+        if not shots:
+            return ""
+        base = f"https://github.com/{self.gh.repo}/blob/{sha}"
+        return "\n".join(f"**{f.rsplit('/', 1)[-1]}**\n\n![{f}]({base}/{f}?raw=true)\n"
+                         for f in shots)
 
     def do_resolve_blocker(self, issue: Issue, task: Task) -> None:
         result = self.in_clone("pm", render("pm_blocker", self.values(issue)))
@@ -398,11 +439,29 @@ class Office:
             return None
         for new in verdict.new_issues:
             self.file_follow_up(issue, new["title"], new["body"])
+        if verdict.outcome == "waiting":
+            self.wait(issue, task, verdict)
+            return None
         if verdict.outcome == "blocked":
             if file_blocker:
                 self.file_blocker(issue, verdict)
             return verdict if not file_blocker else None
         return verdict
+
+    def wait(self, issue: Issue, task: Task, verdict: Verdict) -> None:
+        deps = [n for n in verdict.depends_on if n != issue.number]
+        if not deps:
+            self.record_failure(issue, task, "returned `waiting` without `depends_on`",
+                                status=L.READY if issue.status == L.IN_PROGRESS else None)
+            return
+        if issue.status == L.IN_PROGRESS:
+            self.gh.set_status(issue, L.READY)
+        self.gh.edit_labels(issue.number, add=[L.WAITING])
+        listed = ", ".join(f"#{n}" for n in deps)
+        self.gh.comment(issue.number,
+                        f"Waiting for {listed} to close: {verdict.summary}\n"
+                        f"<!-- office:depends {','.join(map(str, deps))} -->")
+        log.info("#%s waiting on %s", issue.number, listed)
 
     def file_follow_up(self, source: Issue, title: str, body: str) -> None:
         if self.gh.find_issue_by_title(title):

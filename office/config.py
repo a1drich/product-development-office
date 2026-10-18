@@ -38,6 +38,8 @@ class Config:
     practices_need_approval: bool = True
     # Claude Code permission mode for headless agents ("auto", "acceptEdits", ...).
     claude_permission_mode: str = "auto"
+    # Where the target repo's MkDocs site is served while the office runs.
+    docs_port: int = 8787
     # Codex sandbox per role. Testers run Docker and dev servers, so they need full access.
     codex_sandbox: dict[str, str] = field(
         default_factory=lambda: {"reviewer": "workspace-write", "tester": "danger-full-access"}

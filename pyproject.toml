@@ -5,7 +5,9 @@ description = "Agent swarm that develops a GitHub repo until it is blocked on a 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "playwright>=1.64.0",
+]
 
 [project.scripts]
 office = "office.cli:main"

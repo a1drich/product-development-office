@@ -31,7 +31,9 @@ while IFS= read -r f; do
       echo "broken link in $f: $link"
       fail=1
     fi
-  done < <(grep -oE '\]\([^)]+\)' "$f" | sed -E 's/^\]\((.*)\)$/\1/' | grep -vE '^(https?:|mailto:|#)' || true)
+  # Fenced code blocks are examples, not links, so they are skipped.
+  done < <(awk '/^```/{c=!c; next} !c' "$f" | grep -oE '\]\([^)]+\)' \
+             | sed -E 's/^\]\((.*)\)$/\1/' | grep -vE '^(https?:|mailto:|#)' || true)
 done < <(git ls-files --cached --others --exclude-standard '*.md')
 
 if [ "$fail" -ne 0 ]; then

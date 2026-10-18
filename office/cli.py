@@ -120,6 +120,44 @@ def cmd_start(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_shoot(args: argparse.Namespace, cfg: Config) -> int:
+    from pathlib import Path
+
+    from office import shoot
+
+    pages = shoot.load_pages(Path(args.pages))
+    shots = shoot.shoot(args.base_url, pages, Path(args.out))
+    print(shoot.report(shots))
+    failed = [s for s in shots if s.problems]
+    print(f"\n{len(shots)} screenshot(s) in {args.out}; {len(failed)} with problems")
+    return 1 if failed else 0
+
+
+MKDOCS = ["uvx", "--with", "mkdocs-material", "mkdocs"]
+
+
+def cmd_docs(args: argparse.Namespace, cfg: Config) -> int:
+    repo = resolve_repo(args.repo, cfg)
+    ws = Workspace(repo)
+    ws.ensure_clone()
+    ws.update_default_branch()
+    if not (ws.clone / "mkdocs.yml").exists():
+        print(f"{repo} has no mkdocs.yml yet; see docs/INTEGRATION.md, step 4")
+        return 1
+    if args.action == "build":
+        res = run([*MKDOCS, "build", "--strict"], cwd=ws.clone, check=False, timeout=600)
+        print((res.stdout + res.stderr).strip()[-3000:])
+        return 0 if res.ok else 1
+    print(f"→ serving {repo}'s docs at http://127.0.0.1:{args.port} (Ctrl-C to stop)")
+    import subprocess
+
+    try:
+        return subprocess.call([*MKDOCS, "serve", "-a", f"127.0.0.1:{args.port}"],
+                               cwd=ws.clone)
+    except KeyboardInterrupt:
+        return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="office", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -144,6 +182,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--exit-when-idle", action="store_true",
                    help="exit instead of polling when every issue is blocked or done")
     p.set_defaults(fn=cmd_start)
+
+    p = sub.add_parser("shoot", help="screenshot and UX-check a running app's manual pages")
+    p.add_argument("--base-url", required=True, help="where the app is running")
+    p.add_argument("--pages", default="docs/manual/pages.json")
+    p.add_argument("--out", default="docs/manual/screenshots")
+    p.set_defaults(fn=cmd_shoot)
+
+    p = sub.add_parser("docs", help="build or serve a target repo's MkDocs site")
+    p.add_argument("action", choices=["build", "serve"])
+    p.add_argument("repo", nargs="?")
+    p.add_argument("--port", type=int, default=8765)
+    p.set_defaults(fn=cmd_docs)
 
     args = parser.parse_args(argv)
     logging.basicConfig(

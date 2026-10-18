@@ -117,6 +117,33 @@ def check_files(root: Path) -> list[Finding]:
             "Designer and engineers share the same design skill.",
         ))
 
+    if (root / "mkdocs.yml").exists():
+        out.append(Finding("mkdocs", PASS, "MkDocs site (mkdocs.yml)"))
+    else:
+        out.append(Finding(
+            "mkdocs", WARN, "no MkDocs docs site",
+            "Add mkdocs.yml (Material theme) over docs/, with the user manual in the nav, and "
+            "make `uvx --with mkdocs-material mkdocs build --strict` part of the verify command.",
+        ))
+
+    if (root / "docs" / "manual" / "README.md").exists():
+        out.append(Finding("manual", PASS, "user manual: docs/manual/README.md"))
+    else:
+        out.append(Finding(
+            "manual", WARN, "no user manual / feature catalog",
+            "Add docs/manual/README.md: one section per feature or page (what it's for, how to "
+            "use it, desktop and mobile screenshots from docs/manual/screenshots/).",
+        ))
+
+    if (root / "docs" / "manual" / "pages.json").exists():
+        out.append(Finding("pages", PASS, "screenshot pages: docs/manual/pages.json"))
+    else:
+        out.append(Finding(
+            "pages", WARN, "no docs/manual/pages.json",
+            'List the pages to screenshot: {"pages": [{"name": "home", "path": "/", '
+            '"expect": "visible text"}]}. `office shoot` captures them.',
+        ))
+
     if (root / ".env.example").exists():
         out.append(Finding("env-example", PASS, ".env.example exists"))
     else:

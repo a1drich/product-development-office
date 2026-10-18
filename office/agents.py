@@ -9,7 +9,9 @@ agent remembering to edit a label.
 from __future__ import annotations
 
 import json
+import os
 import re
+import signal
 import tempfile
 from dataclasses import dataclass, field
 from importlib import resources
@@ -28,7 +30,7 @@ RATE_LIMIT = re.compile(
 VERDICT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["outcome", "summary", "pr", "blocker", "new_issues"],
+    "required": ["outcome", "summary", "pr", "blocker", "new_issues", "depends_on"],
     "properties": {
         "outcome": {"type": "string"},
         "summary": {"type": "string"},
@@ -50,6 +52,7 @@ VERDICT_SCHEMA = {
                 },
             ]
         },
+        "depends_on": {"type": "array", "items": {"type": "integer"}},
         "new_issues": {
             "type": "array",
             "items": {
@@ -70,6 +73,7 @@ class Verdict:
     pr: int | None = None
     blocker: dict | None = None
     new_issues: list[dict] = field(default_factory=list)
+    depends_on: list[int] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict) -> Verdict:
@@ -79,6 +83,7 @@ class Verdict:
             pr=d.get("pr"),
             blocker=d.get("blocker") or None,
             new_issues=d.get("new_issues") or [],
+            depends_on=[int(n) for n in d.get("depends_on") or [] if str(n).isdigit()],
         )
 
 
@@ -114,13 +119,53 @@ def extract_verdict(text: str) -> Verdict | None:
     return None
 
 
-def run_agent(role: str, prompt: str, cwd: Path, cfg: Config) -> AgentResult:
+def run_agent(
+    role: str, prompt: str, cwd: Path, cfg: Config, exclusive: bool = False
+) -> AgentResult:
+    """Runs one agent in `cwd`. When the folder is `exclusive` to this agent (an issue's
+    worktree), anything it left running there, such as a dev server, is stopped afterwards.
+    The shared main clone is never cleaned, since other agents may be working in it."""
     timeout = cfg.agent_timeout_minutes * 60
-    if role in CLAUDE_ROLES:
-        return _run_claude(role, prompt, cwd, cfg, timeout)
-    if role in CODEX_ROLES:
-        return _run_codex(role, prompt, cwd, cfg, timeout)
-    raise ValueError(f"unknown role {role}")
+    try:
+        if role in CLAUDE_ROLES:
+            return _run_claude(role, prompt, cwd, cfg, timeout)
+        if role in CODEX_ROLES:
+            return _run_codex(role, prompt, cwd, cfg, timeout)
+        raise ValueError(f"unknown role {role}")
+    finally:
+        if exclusive:
+            stop_leftovers(cwd)
+
+
+def _under(path: str, root: str) -> bool:
+    return path == root or path.startswith(root + os.sep)
+
+
+def leftover_pids(root: Path) -> set[int]:
+    """Processes an agent left running in its folder, such as dev servers."""
+    root_s = str(root.resolve())
+    pids: set[int] = set()
+    # Processes whose working directory is inside the folder.
+    res = run(["lsof", "-a", "-d", "cwd", "-F", "pn"], check=False)
+    pid = None
+    for line in res.stdout.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:])
+        elif line.startswith("n") and pid and _under(line[1:], root_s):
+            pids.add(pid)
+    # Processes started from the folder's virtualenv or scripts.
+    res = run(["pgrep", "-f", root_s + os.sep], check=False)
+    pids |= {int(p) for p in res.stdout.split() if p.isdigit()}
+    pids.discard(os.getpid())
+    return pids
+
+
+def stop_leftovers(root: Path) -> None:
+    for pid in leftover_pids(root):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def _run_claude(role: str, prompt: str, cwd: Path, cfg: Config, timeout: float) -> AgentResult:
