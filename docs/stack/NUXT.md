@@ -12,14 +12,14 @@ How the office works with [Nuxt](https://nuxt.com/) frontends written in [TypeSc
 
 - **Dependencies are installed explicitly.** A fresh clone runs `npm ci` before anything else, and the verify script stops early with a clear message when `node_modules` is missing.
 - **Typecheck explicitly.** Production builds don't type-check, so verify runs `nuxi typecheck` (or `vue-tsc --noEmit`) for each app. Nuxt generates its types into `.nuxt/`, so run `nuxi prepare` first on a fresh clone.
-- **Ports are configurable.** Each app's dev server port and every URL it needs (`NUXT_PUBLIC_*`) come from the environment, so an app can run on any free port.
+- **Ports are configurable.** Each app's dev server port and every URL it needs (`NUXT_PUBLIC_*`) come from the environment, so an app can run on any port the office leases it.
 - **A `.env.example`** lists every variable and works as-is for local development.
 
 ## Agent guidance
 
 - Run `npm ci` in a fresh worktree before any frontend command, and again after `package-lock.json` changes.
 - Typecheck with `nuxi typecheck` (after `nuxi prepare` on a fresh checkout), not with `nuxi build` alone.
-- When you start dev servers for testing, use free ports (`nuxi dev --port <port>`) and point the app's URLs at them through environment variables. Never stop servers you didn't start.
+- Start dev servers only on your leased ports (`nuxi dev --port <port>`), and point the app's URLs (`NUXT_PUBLIC_*`) at them through environment variables.
 - Public runtime config (`NUXT_PUBLIC_*`) is baked into static builds. After changing one, rebuild before checking the result.
 
 ## Deploying

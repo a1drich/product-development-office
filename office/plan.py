@@ -65,6 +65,15 @@ def describe(issues: list[Issue], now: datetime, claim_ttl: timedelta) -> list[R
     return sorted(rows, key=lambda r: r.order)
 
 
+def render_leases(leases: list[tuple[str, int, str]]) -> str:
+    """The ports running agents hold, from `ports.Leases.table`."""
+    if not leases:
+        return "Ports: no agent holds any."
+    return "Ports held by running agents:\n" + "\n".join(
+        f"  #{issue}: {ports}" if name == "ports" else f"  #{issue}: {name} ({ports})"
+        for name, issue, ports in leases)
+
+
 def render(rows: list[Row], limits: dict[str, int]) -> str:
     if not rows:
         return "No open issues."

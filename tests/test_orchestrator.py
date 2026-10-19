@@ -85,6 +85,7 @@ class FakeWorkspace:
     def __init__(self, tmp_path):
         self.clone = tmp_path
         self.docs_log = tmp_path / "mkdocs.log"
+        self.leases = tmp_path / "leases"
 
     def default_branch(self):
         return "main"
@@ -112,6 +113,9 @@ def make_office(tmp_path, monkeypatch):
             (tmp_path / ".claude" / "skills" / "impeccable").mkdir(parents=True, exist_ok=True)
         gh = FakeGitHub(issues)
         office = orchestrator.Office(Config(), gh, FakeWorkspace(tmp_path))
+        # No real port probing or lsof in these tests; tests/test_ports.py covers them.
+        office.leases.probe = lambda port: False
+        monkeypatch.setattr(orchestrator.ports, "stop_listeners", lambda held: [])
         queue = list(verdicts)
 
         def fake_run_agent(role, prompt, cwd, cfg, exclusive=False, env=None):
@@ -439,6 +443,8 @@ def test_worktree_agents_get_a_prefix_and_their_databases_are_dropped(make_offic
     office.safely(Task("implement", 1), office.execute)
     prefix = orchestrator.databases.prefix_for("acme/app", 1)
     assert seen["OFFICE_DB_PREFIX"] == prefix
+    assert seen["OFFICE_PORTS"] == "40000-40009" and seen["OFFICE_PORT_BASE"] == "40000"
+    assert office.leases.table() == []  # released after the run, even a crashed one
     assert (seen["OFFICE_AGENT_ROLE"], seen["OFFICE_ISSUE"]) == ("engineer", "1")
     if office.real_gh:  # the signing gh wrapper comes first on the agent's PATH
         assert seen["PATH"].startswith(str(orchestrator.ghshim.BIN))
@@ -456,6 +462,37 @@ def test_agents_in_the_main_clone_are_identified_too(make_office, monkeypatch):
     monkeypatch.setattr(orchestrator, "run_agent", pm)
     office.execute(Task("triage", 1))
     assert (seen["OFFICE_AGENT_ROLE"], seen["OFFICE_ISSUE"]) == ("pm", "1")
+
+
+def test_the_prompt_names_the_leased_ports_and_cleanup_stops_their_servers(make_office,
+                                                                           monkeypatch):
+    office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
+    prompts, stopped = [], []
+
+    def engineer(role, prompt, cwd, cfg, exclusive=False, env=None):
+        prompts.append(prompt)
+        return AgentResult(role, Verdict("failed", "nope"), "")
+
+    monkeypatch.setattr(orchestrator, "run_agent", engineer)
+    monkeypatch.setattr(orchestrator.ports, "stop_listeners",
+                        lambda held: stopped.extend(held) or [])
+    office.execute(Task("implement", 1))
+    assert "Your run has its own ports: 40000-40009" in prompts[0]
+    assert "{{ports}}" not in prompts[0]
+    assert stopped == list(range(40000, 40010))
+
+
+def test_main_clone_steps_get_no_ports(make_office, monkeypatch):
+    office, gh = make_office([Issue(1, "Add login", "", set())], [])
+    prompts = []
+
+    def pm(role, prompt, cwd, cfg, exclusive=False, env=None):
+        prompts.append(prompt)
+        return AgentResult(role, Verdict("ready", "scoped"), "")
+
+    monkeypatch.setattr(orchestrator, "run_agent", pm)
+    office.execute(Task("triage", 1))
+    assert "Your run has its own ports: none: this step doesn't run the app." in prompts[0]
 
 
 def test_start_sweeps_databases_left_by_earlier_runs(make_office):

@@ -14,3 +14,9 @@ The office keeps one guide per stack it supports, with rules learned across ever
 ## Databases you create
 
 Any database you create for your work, such as a test database, a seeded copy for manual testing or an end-to-end run's database, must have a name starting with `{{db_prefix}}` (also in the `OFFICE_DB_PREFIX` environment variable), for example `{{db_prefix}}test` or `{{db_prefix}}e2e`. Set it through the repo's own overrides (see its `AGENTS.md`, for example a test-database name or database URL variable). If the repo has no such override, say so in your verdict's `summary`. When your run ends, the office drops every database with that prefix, so don't rely on one surviving into a later run. Never drop or change a database you didn't create, and never use the repo's shared development database for destructive work such as reseeding.
+
+## Ports
+
+Your run has its own ports: {{ports}}. Start every server you need on these (an API, each frontend, an end-to-end run), through the repo's port settings and the URLs that point between apps. Never use any other port, and never stop a process you didn't start: other agents and the owner's own dev servers use the rest. When your run ends, the office stops anything still listening on your ports.
+
+Some ports have to match configuration outside the repo, such as a sign-in provider's allowed origins. These fixed sets are: {{fixed_ports}}. Use one only when your work really needs it: run `office-lease <name>`, which prints the ports if the set is free (it's then yours until your run ends) or says who holds it. If it's busy, do the rest of your work first and try again. If it's still busy, skip only the check that needs it and say so in your summary. Prefer the repo's local shortcuts (such as a dev-only sign-in) over a real third-party sign-in, so you rarely need these.

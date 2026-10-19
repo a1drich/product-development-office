@@ -14,6 +14,7 @@ How the office works with a [Django](https://www.djangoproject.com/) + [Django R
 - **Commands.** The repo's verify command runs `ruff check`, `ruff format --check`, `manage.py check`, `makemigrations --check --dry-run` and the full test suite (`manage.py test` or [pytest-django](https://pytest-django.readthedocs.io/)). Typical Makefile targets: `migrate`, `seed` (`manage.py seed_demo`), `test`, `lint`.
 - **Settings from the environment** (for example with `django-environ`). `DEBUG` defaults to `False` in `settings.py`, and `.env.example` sets the local values, `DEBUG=True` included, so `cp .env.example .env` is all a fresh clone needs. Insecure dev defaults are fine as long as settings refuse to boot with them when `DEBUG` is off.
 - **Tests get their own database, one per checkout.** Set `DATABASES['default']['TEST']['NAME']` from an env var (for example `TEST_DB_NAME`, used verbatim), defaulting to a name derived from the checkout's path, such as `test_<project>_<8-char hash>`. Parallel worktrees then never share a test database, and agents can name theirs with the office's prefix.
+- **Origins come from the environment.** `CORS_ALLOWED_ORIGINS` (and any other origin allowlist) is read from the environment, so the frontends can run on whichever ports the office leases.
 - **The dev database name is overridable too** (`DATABASE_URL`), so a branch with new migrations can use its own database instead of migrating the shared one.
 - **Migrations are checked in verify.** `makemigrations --check --dry-run` fails the build when a model change has no migration.
 - **Demo data.** A `seed_demo` management command creates a realistic dataset and prints ready-to-use test accounts. It resets its own data, so it is safe to re-run.
@@ -27,6 +28,7 @@ How the office works with a [Django](https://www.djangoproject.com/) + [Django R
 - After merging the base branch, run `showmigrations` or `migrate` on a fresh database. Two leaf migrations in one app is a conflict: engineers add a merge migration (`makemigrations --merge`) to the PR, and testers fail a PR that still has two leaves after merging the base branch.
 - Never edit a migration that has already merged, and never depend on migrations running backwards. Fix forward with a new migration.
 - In multi-tenant apps, scope every queryset to the requesting user's tenant (business, organization or account). Reviewers treat an unscoped queryset in a view or serializer as a blocking finding.
+- Run `runserver` on one of your leased ports (`manage.py runserver 127.0.0.1:<port>`), and add the frontends' leased origins to `CORS_ALLOWED_ORIGINS` (and any other origin allowlist) through the environment.
 - Run `manage.py check` after any change to settings or URLs, and `ruff format` before committing.
 
 ## Deploying

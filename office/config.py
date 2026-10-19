@@ -40,6 +40,17 @@ class Config:
     claude_permission_mode: str = "auto"
     # Where the target repo's MkDocs site is served while the office runs.
     docs_port: int = 8787
+    # Ports. Each engineer, reviewer and tester run leases a block of ports_per_agent
+    # ports from agent_ports, skipping busy ports and the owner's reserved ranges.
+    agent_ports: str = "40000-44999"
+    ports_per_agent: int = 10
+    reserved_ports: list[str] = field(
+        default_factory=lambda: ["3000-3099", "5173-5199", "8000-8099"]
+    )
+    # Named port sets that must match configuration outside the repo, such as
+    # {"oauth": [3011, 3012]} for a sign-in provider's allowed origins. One issue at a
+    # time claims a set with `office-lease <name>`.
+    fixed_ports: dict[str, list[int]] = field(default_factory=dict)
     # Codex sandbox per role. Testers run Docker and dev servers, so they need full access.
     codex_sandbox: dict[str, str] = field(
         default_factory=lambda: {"reviewer": "workspace-write", "tester": "danger-full-access"}

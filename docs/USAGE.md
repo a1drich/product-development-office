@@ -68,12 +68,21 @@ Only one office can run per repo. `office start` refuses if another is already r
 | `office labels [repo]` | Creates the office labels |
 | `office shoot --base-url URL` | Run in a target repo with its app running: screenshots every page in `docs/manual/pages.json` at desktop and mobile width, and reports UX problems |
 | `office stop [repo] [--now] [--no-wait]` | Stops a running office once its agents finish their step, or immediately with `--now` |
-| `office plan [repo]` | Shows every open issue's status, priority and what happens next, in the order the office would take them. Read-only, so it's safe to run while the office is running. |
+| `office plan [repo]` | Shows every open issue's status, priority and what happens next, in the order the office would take them, and the ports each running agent holds. Read-only, so it's safe to run while the office is running. |
 | `office clean [repo] [--github] [--yes]` | Removes a project's local folders and the throwaway databases its agents created, and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 
 Settings such as concurrency per role (`limits`), poll intervals and the claim timeout can be overridden in `.office/config.json`. The defaults are in `office/config.py`. The config is read at startup, so changes apply from the next `office start`.
+
+Ports have their own settings. Agents only use ports the office leases them (see [Architecture](ARCHITECTURE.md)), so your own dev servers and the agents never collide:
+
+| Setting | Default | What it's for |
+|---|---|---|
+| `agent_ports` | `"40000-44999"` | The range agents' port blocks come from |
+| `ports_per_agent` | `10` | Ports in each run's block |
+| `reserved_ports` | `["3000-3099", "5173-5199", "8000-8099"]` | Your ports: agents never get these |
+| `fixed_ports` | `{}` | Named sets that must match outside configuration, such as `{"oauth": [3011, 3012]}` for a sign-in provider's allowed origins. One agent at a time claims a set. |
 
 ## Day to day
 
@@ -140,6 +149,7 @@ What the office keeps locally, all gitignored:
 | `workspace/<owner>__<repo>/` | The main clone of the target |
 | `workspace/<owner>__<repo>-worktrees/` | One worktree per issue being worked on |
 | `workspace/<owner>__<repo>-mkdocs.log` | The live docs server's log |
+| `workspace/<owner>__<repo>-leases/` | The ports running agents hold, shown by `office plan`; cleared at every start |
 | `workspace/<owner>__<repo>.pid` | The running office's process id, used by `office stop`; removed when it exits |
 
 Folders include the owner, so `acme/web` and `other/web` never collide. Folders from older versions, named after the repo alone, are moved to the new names automatically, worktrees included, the next time the office uses them. A folder still in use by a running office is never moved.

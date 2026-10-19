@@ -33,11 +33,12 @@ class Workspace:
         self.worktrees = root / f"{name}-worktrees"
         self.docs_log = root / f"{name}-mkdocs.log"
         self.pidfile = root / f"{name}.pid"
+        self.leases = root / f"{name}-leases"
         self.lock = threading.RLock()
 
     @property
     def paths(self) -> list[Path]:
-        return [self.clone, self.worktrees, self.docs_log, self.pidfile]
+        return [self.clone, self.worktrees, self.docs_log, self.pidfile, self.leases]
 
     def running_pid(self) -> int | None:
         """The pid of the office running on this repo, if one is."""

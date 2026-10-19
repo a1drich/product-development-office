@@ -1,4 +1,5 @@
-"""A `gh` wrapper on every agent's PATH that signs what the agent posts.
+"""A `gh` wrapper on every agent's PATH that signs what the agent posts, and the
+installer for the agents' commands.
 
 Agents post comments, PRs and issues with `gh` themselves. The office puts this wrapper
 first on their PATH, with `OFFICE_AGENT_ROLE`, `OFFICE_ISSUE` and `OFFICE_REAL_GH` in
@@ -10,6 +11,7 @@ body the PM rewrites doesn't collect a signature on every pass.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -54,8 +56,15 @@ def sign_args(
     return out, stdin
 
 
+def real_gh() -> str:
+    """The real `gh` on PATH, skipping this wrapper's own folder so it never calls itself."""
+    path = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep)
+                           if Path(p).resolve() != BIN.resolve())
+    return shutil.which("gh", path=path) or "gh"
+
+
 def main(argv: list[str]) -> int:
-    real = os.environ.get("OFFICE_REAL_GH") or "gh"
+    real = os.environ.get("OFFICE_REAL_GH") or real_gh()
     role = os.environ.get("OFFICE_AGENT_ROLE")
     stdin = None
     if role:
@@ -67,15 +76,18 @@ def main(argv: list[str]) -> int:
 
 
 def install(bin_dir: Path = BIN) -> Path:
-    """Writes the `gh` wrapper into `bin_dir` (gitignored) and returns the directory."""
+    """Writes the agents' commands into `bin_dir` (gitignored): the signing `gh` wrapper
+    and `office-lease`. Returns the directory, which goes first on agents' PATH."""
     bin_dir.mkdir(parents=True, exist_ok=True)
-    shim = bin_dir / "gh"
-    script = (f"#!{sys.executable}\n"
-              "import sys\n"
-              f"sys.path.insert(0, {str(ROOT)!r})\n"
-              "from office.ghshim import main\n"
-              "sys.exit(main(sys.argv[1:]))\n")
-    if not shim.exists() or shim.read_text() != script:
-        shim.write_text(script)
-        shim.chmod(0o755)
+    for name, entry in (("gh", "office.ghshim:main"), ("office-lease", "office.ports:cli")):
+        module, func = entry.split(":")
+        script = (f"#!{sys.executable}\n"
+                  "import sys\n"
+                  f"sys.path.insert(0, {str(ROOT)!r})\n"
+                  f"from {module} import {func}\n"
+                  f"sys.exit({func}(sys.argv[1:]))\n")
+        tool = bin_dir / name
+        if not tool.exists() or tool.read_text() != script:
+            tool.write_text(script)
+            tool.chmod(0o755)
     return bin_dir

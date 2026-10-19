@@ -102,7 +102,7 @@ The engineers and testers run everything on your machine, in parallel, without y
 - **Mocked external services:** put each one (payments, OAuth, messaging) behind a flag such as `PAYMENTS_MOCK=true`, so the whole product runs end to end offline.
 - **Demo data:** a seed command (`make seed`, such as Django's `seed_demo`) creates realistic data, so the tester can exercise real flows.
 - **Separate test database:** tests use their own database, and its name can be overridden per run, for example `TEST_DB_NAME=myapp_test_agent2`. Several agents running the suite at once must not share one. Make every database name overridable the same way (dev, test and end-to-end): agents name the databases they create with a prefix the office gives them, and the office drops those databases after each run. Databases it can't name that way are left behind.
-- **Configurable ports:** dev server ports can be set from env vars, so two worktrees can run at the same time.
+- **Configurable ports:** every dev server's port, and every URL and origin allowlist that points between apps, can be set from env vars. Each agent run gets its own block of ports from the office, and only runs the app on them.
 
 To check: clone the repo into a new folder, then run `make env install up migrate seed verify`. It should pass with no manual steps.
 

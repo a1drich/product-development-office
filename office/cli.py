@@ -167,6 +167,7 @@ def cmd_plan(args: argparse.Namespace, cfg: Config) -> int:
     from datetime import UTC, datetime, timedelta
 
     from office import plan
+    from office.ports import Leases
 
     repo = args.repo or cfg.repo
     if not repo or not REPO_RE.match(repo):
@@ -175,6 +176,9 @@ def cmd_plan(args: argparse.Namespace, cfg: Config) -> int:
                          timedelta(minutes=cfg.claim_ttl_minutes))
     print(f"{repo}\n")
     print(plan.render(rows, cfg.limits))
+    leases = Leases(Workspace(repo).leases, cfg.agent_ports, cfg.ports_per_agent,
+                    cfg.reserved_ports, cfg.fixed_ports)
+    print("\n" + plan.render_leases(leases.table()))
     return 0
 
 

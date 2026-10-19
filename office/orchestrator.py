@@ -12,7 +12,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
-from office import databases, ghshim, planner, readiness, shell, stacks
+from office import databases, ghshim, planner, ports, readiness, shell, stacks
 from office import labels as L
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
@@ -32,6 +32,14 @@ SCREENSHOT_DIR = "docs/manual/screenshots/"
 
 def mark(name: str) -> str:
     return f"<!-- office:{name} -->"
+
+
+def ports_text(block: range | None) -> str:
+    if block is None:
+        return ("none: every agent port is busy right now. Don't start servers; say so in "
+                "your summary if your work needed them.")
+    return (f"{ports.label(block)} (also in `OFFICE_PORTS`, and the first one in "
+            "`OFFICE_PORT_BASE`)")
 
 
 def normalize_title(title: str) -> str:
@@ -102,6 +110,8 @@ class Office:
         self.dbs = databases.Databases(ws.clone, gh.repo)
         self.stacks = stacks.load()
         self.real_gh = shutil.which("gh")
+        self.leases = ports.Leases(ws.leases, cfg.agent_ports, cfg.ports_per_agent,
+                                   cfg.reserved_ports, cfg.fixed_ports)
 
     # --- loop -------------------------------------------------------------------
 
@@ -209,6 +219,7 @@ class Office:
             return
         self.ws.acquire_pidfile()
         ghshim.install()
+        self.leases.clear()
         previous = {sig: signal.signal(sig, self.on_signal)
                     for sig in (signal.SIGINT, signal.SIGTERM)}
         try:
@@ -377,6 +388,8 @@ class Office:
             "open_issues": format_open_issues(self.gh.open_issue_titles(), issue.number),
             "db_prefix": databases.prefix_for(self.gh.repo, issue.number),
             "stack": stacks.prompt_section(stacks.detect(self.stacks, self.ws.clone)),
+            "fixed_ports": ", ".join(f"`{name}` ({', '.join(map(str, p))})"
+                                     for name, p in self.cfg.fixed_ports.items()) or "none",
             "verify": self.verify,
             "branch": branch_name(issue.number),
             "base": self.ws.default_branch(),
@@ -386,15 +399,25 @@ class Office:
         }
 
     def in_worktree(self, role: str, issue: Issue, prompt: str) -> AgentResult:
-        """Runs an agent in the issue's own worktree. Afterwards, even if the run failed,
-        the office drops every database the agent created under the issue's prefix."""
+        """Runs an agent in the issue's own worktree, on its own leased block of ports.
+        Afterwards, even if the run failed, the office stops anything still listening on
+        those ports, releases them, and drops every database the agent created under the
+        issue's prefix."""
         path = self.ws.worktree(issue.number)
         prefix = databases.prefix_for(self.gh.repo, issue.number)
+        block = self.leases.lease(issue.number)
+        env = {**self.agent_env(role, issue.number), "OFFICE_DB_PREFIX": prefix}
+        if block:
+            env["OFFICE_PORTS"] = ports.label(block)
+            env["OFFICE_PORT_BASE"] = str(block.start)
+            log.info("#%s: leased ports %s to the %s", issue.number, ports.label(block), role)
+        prompt = prompt.replace("{{ports}}", ports_text(block))
         try:
-            return run_agent(role, prompt, path, self.cfg, exclusive=True,
-                             env={**self.agent_env(role, issue.number),
-                                  "OFFICE_DB_PREFIX": prefix})
+            return run_agent(role, prompt, path, self.cfg, exclusive=True, env=env)
         finally:
+            held = self.leases.release(issue.number)
+            if ports.stop_listeners(held):
+                log.info("#%s: stopped servers the %s left on its ports", issue.number, role)
             dropped = self.dbs.drop(prefix)
             if dropped:
                 log.info("#%s: dropped the %s's databases: %s", issue.number, role,
@@ -402,15 +425,18 @@ class Office:
 
     def in_clone(self, role: str, prompt: str, issue: int) -> AgentResult:
         self.ws.update_default_branch()
+        prompt = prompt.replace("{{ports}}", "none: this step doesn't run the app.")
         return run_agent(role, prompt, self.ws.clone, self.cfg,
                          env=self.agent_env(role, issue))
 
     def agent_env(self, role: str, issue: int) -> dict[str, str]:
-        """Who the agent is, and the `gh` wrapper that signs what it posts with that."""
-        env = {"OFFICE_AGENT_ROLE": role, "OFFICE_ISSUE": str(issue)}
+        """Who the agent is, and its commands: the `gh` wrapper that signs what it posts,
+        and `office-lease` for fixed port sets."""
+        env = {"OFFICE_AGENT_ROLE": role, "OFFICE_ISSUE": str(issue),
+               "OFFICE_LEASES": str(self.ws.leases),
+               "PATH": f"{ghshim.BIN}{os.pathsep}{os.environ.get('PATH', '')}"}
         if self.real_gh:
             env["OFFICE_REAL_GH"] = self.real_gh
-            env["PATH"] = f"{ghshim.BIN}{os.pathsep}{os.environ.get('PATH', '')}"
         return env
 
     def do_triage(self, issue: Issue, task: Task) -> None:

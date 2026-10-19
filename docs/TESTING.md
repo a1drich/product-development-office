@@ -66,6 +66,7 @@ uv run playwright install chromium    # once, before the screenshot tests
 | `tests/test_databases.py` | Finding the target's Postgres from its compose config, per-repo and per-issue prefixes, and the guard against touching any database outside `office_` |
 | `tests/test_stacks.py` | Parsing stack guides, detecting them by file name and contents, and that every guide in `docs/stack/` is valid and listed |
 | `tests/test_signature.py` | Signatures, the `gh` wrapper's argument rewriting and an end-to-end run against a stand-in `gh`, and that agent comments don't reset the failure count |
+| `tests/test_ports.py` | Port blocks (free, unreserved, one per run), fixed sets claimed by one issue at a time, the `office-lease` command, and probing and stopping a real server |
 | `tests/test_shoot.py` | `office shoot` against a real local server and browser |
 
 The tests never call the real `claude`, `codex` or GitHub. Extend the fakes in `tests/test_orchestrator.py` instead.
