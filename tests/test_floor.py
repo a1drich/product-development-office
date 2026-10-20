@@ -77,4 +77,5 @@ def test_each_repos_docs_site_gets_its_own_port(tmp_path, monkeypatch):
         (o.ws.clone / "mkdocs.yml").write_text("site_name: x")
     monkeypatch.setattr(orchestrator.ports, "in_use", lambda p: p == 8788)
     fl.assign_docs_ports()
-    assert [o.docs.port for o in offices[:2]] == [8787, 8789]
+    # The third has no site yet, but a merge may add one: it gets a port of its own too.
+    assert [o.docs.port for o in offices] == [8787, 8789, 8790]

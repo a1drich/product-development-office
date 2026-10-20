@@ -137,11 +137,10 @@ class Floor:
 
     def assign_docs_ports(self) -> None:
         """Each repo's docs site gets its own port: its `docs_port`, or the next one up
-        that's free and not already another repo's."""
+        that's free and not already another repo's. Repos without a site yet get one too,
+        since a merge can add the site while the office runs."""
         taken: set[int] = set()
         for o in self.offices:
-            if not o.docs.available:
-                continue
             port = o.cfg.docs_port
             while port in taken or ports.in_use(port):
                 port += 1
