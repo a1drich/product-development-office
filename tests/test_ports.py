@@ -144,3 +144,18 @@ def test_a_lease_whose_office_exited_no_longer_holds_its_ports(tmp_path):
                   probe=lambda p: False, pid=dead.pid)
     assert gone.lease(1) == range(40000, 40010)
     assert leases(tmp_path, agent="40000-40009").lease(1) == range(40000, 40010)
+
+
+def test_never_stops_dockers_port_forwarder(monkeypatch):
+    from office import ports
+    from office.shell import Result
+
+    names = {101: "/Applications/Docker.app/Contents/MacOS/com.docker.backend",
+             102: "/usr/bin/docker-proxy", 103: "node"}
+    killed = []
+    monkeypatch.setattr(ports, "listeners", lambda port: set(names))
+    monkeypatch.setattr(ports, "run", lambda args, check=True: Result(0, names[int(args[-1])],
+                                                                      ""))
+    monkeypatch.setattr(ports.os, "kill", lambda pid, sig: killed.append(pid))
+    assert stop_listeners([40000]) == [103]
+    assert killed == [103]

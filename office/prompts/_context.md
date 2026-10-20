@@ -15,6 +15,10 @@ The office keeps one guide per stack it supports, with rules learned across ever
 
 Any database you create for your work, such as a test database, a seeded copy for manual testing or an end-to-end run's database, must have a name starting with `{{db_prefix}}` (also in the `OFFICE_DB_PREFIX` environment variable), for example `{{db_prefix}}test` or `{{db_prefix}}e2e`. Set it through the repo's own overrides (see its `AGENTS.md`, for example a test-database name or database URL variable). If the repo has no such override, say so in your verdict's `summary`. When your run ends, the office drops every database with that prefix, so don't rely on one surviving into a later run. Never drop or change a database you didn't create, and never use the repo's shared development database for destructive work such as reseeding.
 
+## Containers you start
+
+In your worktree, `COMPOSE_PROJECT_NAME` is set to your issue's own compose project, so everything `docker compose` creates there (containers, networks and volumes) belongs to your run. Name anything you start with plain `docker run` (and its volumes) with `{{db_prefix}}`. When your run ends, the office removes all of it, except a container publishing a port outside your ports, which it keeps for other checkouts until the next start. Never stop or remove a container, network or volume you didn't start, such as the shared development database.
+
 ## Ports
 
 Your run has its own ports: {{ports}}. Start every server you need on these (an API, each frontend, an end-to-end run), through the repo's port settings and the URLs that point between apps. Never use any other port, and never stop a process you didn't start: other agents and the owner's own dev servers use the rest. When your run ends, the office stops anything still listening on your ports.

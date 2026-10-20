@@ -66,6 +66,7 @@ uv run playwright install chromium    # once, before the screenshot tests
 | `tests/test_readiness.py` | The integration checklist |
 | `tests/test_plan.py` | `office plan` output |
 | `tests/test_databases.py` | Finding the target's Postgres from its compose config, per-repo and per-issue prefixes, and the guard against touching any database outside `office_` |
+| `tests/test_containers.py` | Which containers, networks and volumes an issue owns, keeping containers that publish a port outside the lease, never failing a run, and the guard against touching anything outside `office_` (with a stand-in `docker`) |
 | `tests/test_stacks.py` | Parsing stack guides, detecting them by file name and contents, and that every guide in `docs/stack/` is valid and listed |
 | `tests/test_signature.py` | Signatures, the `gh` wrapper's argument rewriting and an end-to-end run against a stand-in `gh`, and that agent comments don't reset the failure count |
 | `tests/test_ports.py` | Port blocks (free, unreserved, one per run), fixed sets claimed by one issue at a time, the `office-lease` command, and probing and stopping a real server |

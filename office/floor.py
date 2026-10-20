@@ -117,7 +117,7 @@ class Floor:
                     self.shared.pool = pool
                     try:
                         self.each(lambda o: (o.recover_claims(), o.sweep_databases(),
-                                             o.bootstrap()))
+                                             o.sweep_containers(), o.bootstrap()))
                         self.loop(exit_when_idle)
                     finally:
                         pool.shutdown(wait=True, cancel_futures=True)

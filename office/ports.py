@@ -62,11 +62,24 @@ def listeners(port: int) -> set[int]:
     return {int(p) for p in res.stdout.split() if p.isdigit()} - {os.getpid()}
 
 
+# Processes that listen on behalf of a container's published port. Stopping one would take
+# down Docker itself, so the office removes the container instead (office/containers.py).
+DOCKER_FORWARDERS = ("com.docker.", "docker-proxy", "vpnkit", "OrbStack", "gvproxy",
+                     "limactl", "rootlesskit")
+
+
+def is_docker(pid: int) -> bool:
+    res = run(["ps", "-o", "comm=", "-p", str(pid)], check=False)
+    name = os.path.basename(res.stdout.strip())
+    return any(name.startswith(f) for f in DOCKER_FORWARDERS)
+
+
 def stop_listeners(ports: list[int]) -> list[int]:
-    """Stops whatever is listening on these ports (servers an agent left behind)."""
+    """Stops whatever is listening on these ports (servers an agent left behind), except
+    Docker's own port forwarders."""
     stopped = []
     for port in ports:
-        for pid in listeners(port):
+        for pid in (p for p in listeners(port) if not is_docker(p)):
             try:
                 os.kill(pid, signal.SIGTERM)
                 stopped.append(pid)

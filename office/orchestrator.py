@@ -15,7 +15,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from office import databases, ghshim, planner, ports, readiness, shell, stacks
+from office import containers, databases, ghshim, planner, ports, readiness, shell, stacks
 from office import labels as L
 from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
@@ -48,6 +48,14 @@ def ports_text(block: range | None) -> str:
                 "your summary if your work needed them.")
     return (f"{ports.label(block)} (also in `OFFICE_PORTS`, and the first one in "
             "`OFFICE_PORT_BASE`)")
+
+
+# How `gh pr merge` reports a PR that conflicts with its base; the wording varies.
+CONFLICT_ERRORS = ("merge conflict", "not mergeable", "cannot be cleanly created")
+
+
+def is_merge_conflict(error: str) -> bool:
+    return any(phrase in error.lower() for phrase in CONFLICT_ERRORS)
 
 
 def normalize_title(title: str) -> str:
@@ -304,6 +312,14 @@ class Office:
             log.info("dropped %s database(s) left over from earlier runs: %s", len(dropped),
                      ", ".join(dropped))
 
+    def sweep_containers(self) -> None:
+        """The same for containers, networks and volumes, including ones kept after a run
+        because they served a port outside its lease."""
+        removed = containers.remove(databases.repo_prefix(self.gh.repo))
+        if removed:
+            log.info("removed %s container(s), network(s) and volume(s) left over from earlier "
+                     "runs: %s", len(removed), ", ".join(removed))
+
     def bootstrap(self) -> None:
         """Every target needs impeccable before design work. If the clone doesn't have it,
         file a ready, p0 issue so an engineer adds it in a PR that is reviewed and tested
@@ -421,12 +437,13 @@ class Office:
     def leased(self, role: str, number: int) -> Iterator[tuple[Path, dict[str, str], range | None]]:
         """The issue's own worktree, its environment and its leased block of ports.
         Afterwards, even if the run failed, the office stops anything still listening on
-        those ports, releases them, and drops every database created under the issue's
-        prefix."""
+        those ports, releases them, and removes every container and database created under the
+        issue's prefix."""
         path = self.ws.worktree(number)
         prefix = databases.prefix_for(self.gh.repo, number)
         block = self.leases.lease(number)
-        env = {**self.agent_env(role, number), "OFFICE_DB_PREFIX": prefix}
+        env = {**self.agent_env(role, number), "OFFICE_DB_PREFIX": prefix,
+               "COMPOSE_PROJECT_NAME": containers.project_for(self.gh.repo, number)}
         if block:
             env["OFFICE_PORTS"] = ports.label(block)
             env["OFFICE_PORT_BASE"] = str(block.start)
@@ -435,6 +452,11 @@ class Office:
             yield path, env, block
         finally:
             held = self.leases.release(number)
+            # Containers first: Docker, not the container, listens on a published port.
+            removed = containers.remove(prefix, set(held))
+            if removed:
+                log.info("#%s: removed the %s's containers, networks and volumes: %s",
+                         number, role, ", ".join(removed))
             if ports.stop_listeners(held):
                 log.info("#%s: stopped servers the %s left on its ports", number, role)
             dropped = self.dbs.drop(prefix)
@@ -599,7 +621,7 @@ class Office:
             self.gh.merge_pr(pr)
         except shell.CommandError as e:
             # GitHub computes mergeability lazily, so the check above can miss a conflict.
-            if "merge conflict" not in str(e).lower():
+            if not is_merge_conflict(str(e)):
                 raise
             self.send_back_conflicting(issue, pr)
             return
@@ -678,18 +700,22 @@ class Office:
                                       f"{mark('not-released')}")
         log.warning("#%s: %s", issue.number, why.splitlines()[0])
 
-    def run_in_release_tree(self, issue: Issue, at: str, commands: list[list[str]]
-                            ) -> tuple[shell.Result, list[str]] | None:
+    def run_in_release_tree(self, issue: Issue, at: str, commands: list[list[str]],
+                            checks: int = 0) -> tuple[shell.Result, list[str]] | None:
         """Runs the commands in order in a fresh worktree at commit `at`, stopping at the
         first failure. Returns the last result and its command, or None when the office is
-        stopping."""
+        stopping. The first `checks` commands (verify) run in the issue's compose project,
+        like an agent's run. The rest (release, rollback) act on what's live, so they run
+        without it: a deploy that runs compose against a server must keep its own project
+        name."""
         self.ws.remove_worktree(issue.number)
         try:
             with self.leased("office", issue.number) as (path, env, _):
                 # The worktree fetches again, so pin it to the commit that was approved.
                 self.ws.git("reset", "-q", "--hard", at, cwd=path)
-                for args in commands:
-                    res = self.command(args, path, env)
+                live = {k: v for k, v in env.items() if k != "COMPOSE_PROJECT_NAME"}
+                for i, args in enumerate(commands):
+                    res = self.command(args, path, env if i < checks else live)
                     if self.stopping.is_set():
                         return None  # the label stays, so the next start runs it again
                     if not res.ok:
@@ -715,8 +741,9 @@ class Office:
                         "list again.")
             return
         verify = readiness.verify_command(self.ws.clone)
-        commands = ([verify.split()] if verify else []) + [release.split()]
-        ran = self.run_in_release_tree(issue, head, commands)
+        checks = [verify.split()] if verify else []
+        commands = checks + [release.split()]
+        ran = self.run_in_release_tree(issue, head, commands, checks=len(checks))
         if ran is None:
             return
         res, args = ran

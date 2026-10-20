@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from test_orchestrator import FakeGitHub, FakeWorkspace
 
+from office import floor as floor_module
 from office import labels as L
 from office import orchestrator
 from office.agents import AgentResult
@@ -79,3 +80,17 @@ def test_each_repos_docs_site_gets_its_own_port(tmp_path, monkeypatch):
     fl.assign_docs_ports()
     # The third has no site yet, but a merge may add one: it gets a port of its own too.
     assert [o.docs.port for o in offices] == [8787, 8789, 8790]
+
+
+def test_start_sweeps_each_repos_leftover_containers_and_only_its_own(tmp_path, monkeypatch):
+    fl, offices, _ = floor(tmp_path, {"acme/a": [], "acme/b": []})
+    swept = []
+    monkeypatch.setattr(orchestrator.containers, "remove",
+                        lambda prefix, allowed=None: swept.append(prefix) or [])
+    monkeypatch.setattr(floor_module.ghshim, "install", lambda: None)
+    monkeypatch.setattr(fl, "loop", lambda exit_when_idle: None)
+    for o in offices:
+        o.dbs.drop = lambda prefix=None: []
+    fl.serve(exit_when_idle=True)
+    assert swept == [orchestrator.databases.repo_prefix("acme/a"),
+                     orchestrator.databases.repo_prefix("acme/b")]

@@ -35,6 +35,7 @@ Never run `office start` without `--dry-run` against a repo the owner hasn't ask
 - `office/ports.py` leases ports to agent runs. Leases are local files that only live as long as a run; never make them outlive it.
 - `office/stacks.py` reads `docs/stack/*.md`, detects which guides match a target and builds the prompts' stack section. It holds no stack knowledge itself; keep that in the guides.
 - `office/databases.py` drops agents' throwaway databases in the target's compose Postgres. It only ever touches names starting with `office_`; keep that guard.
+- `office/containers.py` removes the Docker containers, networks and volumes agents start, by their issue's compose project and name prefix. Like `databases.py`, it only ever touches names starting with `office_`; keep that guard.
 - `office/shoot.py` (Playwright) has a real-browser test in `tests/test_shoot.py`. Run `uv run playwright install chromium` once first.
 
 ## What this project is
@@ -68,7 +69,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
   6. Start the loop.
 - **Stop condition:** the office idles and posts a summary of open blockers when no issue can be acted on.
 - **Engineers work in isolation.** Each one gets its own git worktree of the target repo.
-- **The office cleans up after agents.** Anything an agent leaves running in its worktree or on its leased ports is stopped, and every database it created under its issue's `office_` prefix is dropped after the run, even a failed one. The office never drops a database outside that prefix.
+- **The office cleans up after agents.** Anything an agent leaves running in its worktree or on its leased ports is stopped, every database it created under its issue's `office_` prefix is dropped, and every container, network and volume in its issue's compose project or prefix is removed after the run, even a failed one. Only a container publishing a port outside the lease survives, until the next `office start`. The office never touches a database or container outside `office_`, and never stops Docker's own port forwarders.
 - **Agents only use leased ports.** Each engineer, reviewer and tester run gets its own block from `agent_ports`, never one in `reserved_ports` or already in use. Fixed sets that must match outside configuration are claimed with `office-lease`, one issue at a time.
 - **The docs site is part of every delivery.** The target's MkDocs site and its user manual at `docs/manual/` are updated in the same PR as each user-visible change, screenshots come from `office shoot`, and `mkdocs build --strict` must pass. `office start` serves the site live from the main clone.
 - **Sequencing isn't a human decision.** "Wait for #N" is a `waiting` verdict with `depends_on`, not a blocker. A wait that would close a cycle is refused, and an existing cycle is broken by releasing its most urgent issue. Human requests that conflict with documented scope are blocked, not closed.

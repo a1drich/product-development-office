@@ -136,6 +136,7 @@ def make_office(tmp_path, monkeypatch):
         # No real port probing or lsof in these tests; tests/test_ports.py covers them.
         office.leases.probe = lambda port: False
         monkeypatch.setattr(orchestrator.ports, "stop_listeners", lambda held: [])
+        monkeypatch.setattr(orchestrator.containers, "remove", lambda prefix, allowed=None: [])
         queue = list(verdicts)
 
         def fake_run_agent(role, prompt, cwd, cfg, exclusive=False, env=None):
@@ -515,6 +516,38 @@ def test_main_clone_steps_get_no_ports(make_office, monkeypatch):
     assert "Your run has its own ports: none: this step doesn't run the app." in prompts[0]
 
 
+def test_worktree_agents_get_a_compose_project_and_their_containers_are_removed_first(
+        make_office, monkeypatch):
+    office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
+    seen, calls = {}, []
+
+    def engineer(role, prompt, cwd, cfg, exclusive=False, env=None):
+        seen.update(env or {})
+        raise RuntimeError("agent crashed")
+
+    monkeypatch.setattr(orchestrator, "run_agent", engineer)
+    monkeypatch.setattr(orchestrator.containers, "remove",
+                        lambda prefix, allowed=None: calls.append(("remove", prefix, allowed))
+                        or [])
+    monkeypatch.setattr(orchestrator.ports, "stop_listeners",
+                        lambda held: calls.append(("stop", held)) or [])
+    office.safely(Task("implement", 1), office.execute)
+    prefix = orchestrator.databases.prefix_for("acme/app", 1)
+    assert seen["COMPOSE_PROJECT_NAME"] == prefix.rstrip("_")
+    lease = list(range(40000, 40010))
+    # Containers go before listeners: Docker, not the container, holds a published port.
+    assert calls == [("remove", prefix, set(lease)), ("stop", lease)]
+
+
+def test_start_sweeps_containers_left_by_earlier_runs(make_office, monkeypatch):
+    office, gh = make_office([], [])
+    swept = []
+    monkeypatch.setattr(orchestrator.containers, "remove",
+                        lambda prefix, allowed=None: swept.append((prefix, allowed)) or [])
+    office.sweep_containers()
+    assert swept == [(orchestrator.databases.repo_prefix("acme/app"), None)]
+
+
 def test_start_sweeps_databases_left_by_earlier_runs(make_office):
     office, gh = make_office([], [])
     office.dbs = FakeDatabases()
@@ -541,6 +574,10 @@ def test_conflicting_pr_goes_back_without_running_an_agent(make_office, kind, st
     assert gh.merged == []
 
 
+def test_other_merge_errors_are_not_mistaken_for_conflicts():
+    assert not orchestrator.is_merge_conflict("GraphQL: Resource not accessible by integration")
+
+
 def test_conflict_appearing_during_testing_goes_back_without_a_failure(make_office,
                                                                       monkeypatch):
     office, gh = make_office([Issue(1, "x", "", {L.TESTING})], [])
@@ -557,13 +594,16 @@ def test_conflict_appearing_during_testing_goes_back_without_a_failure(make_offi
     assert not any(FAILED_MARK in c.body for c in gh.issues[1].comments)
 
 
-def test_merge_rejected_for_conflicts_goes_back_without_a_failure(make_office):
+@pytest.mark.parametrize("error", [
+    "GraphQL: Pull Request has merge conflicts (mergePullRequest)",
+    "X Pull request owner/name#5 is not mergeable: the merge commit cannot be cleanly created.",
+])
+def test_merge_rejected_for_conflicts_goes_back_without_a_failure(make_office, error):
     office, gh = make_office([Issue(1, "x", "", {L.TESTING})], [Verdict("pass", "all good")])
     gh.prs[1] = {"number": 5}
 
     def merge_pr(pr):  # GitHub hadn't computed mergeability, so the pre-check passed
-        raise shell.CommandError(["gh", "pr", "merge"], shell.Result(
-            1, "", "GraphQL: Pull Request has merge conflicts (mergePullRequest)"))
+        raise shell.CommandError(["gh", "pr", "merge"], shell.Result(1, "", error))
 
     gh.merge_pr = merge_pr
     office.execute(Task("test", 1))
@@ -636,10 +676,11 @@ def releasing(make_office, tmp_path):
     def make(issues, verdicts=(), failing=()):
         (tmp_path / "Makefile").write_text(MAKEFILE)
         office, gh = make_office(issues, verdicts)
-        office.ran = []
+        office.ran, office.envs = [], {}
 
         def command(args, cwd, env):
             office.ran.append(" ".join(args))
+            office.envs[" ".join(args)] = env
             bad = any(name in args for name in failing)
             return Result(1 if bad else 0, "output", "")
 
@@ -694,6 +735,21 @@ def test_an_approved_release_is_verified_released_then_checked_live(releasing):
     assert "<!-- office:deployed abc1234 -->" in issue.comments[-1].body
     assert orchestrator.planner.task_for(issue, datetime.now(UTC), orchestrator.timedelta(1)
                                          ).kind == "live_check"
+
+
+def test_only_verify_runs_in_the_issues_compose_project(releasing):
+    old = release_issue(3, comments=[deployed_comment("0000aaa")])
+    old.state = "CLOSED"
+    office, gh = releasing([old, release_issue(9, L.BLOCKED, L.RELEASE_APPROVED)])
+    office.execute(Task("deploy", 9))
+    gh.edit_labels(9, add=[L.ROLLBACK_APPROVED])
+    office.execute(Task("rollback", 9))
+    assert office.envs["make verify"]["COMPOSE_PROJECT_NAME"] == \
+        orchestrator.containers.project_for("acme/app", 9)
+    # A release that runs compose against a server must not deploy under the office's name.
+    for cmd in ("make release", "make rollback REF=0000aaa"):
+        assert "COMPOSE_PROJECT_NAME" not in office.envs[cmd]
+        assert office.envs[cmd]["OFFICE_DB_PREFIX"]  # still leased like any run
 
 
 @pytest.mark.parametrize("setup, expected", [

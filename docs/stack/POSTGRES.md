@@ -17,13 +17,13 @@ How the office works with a [Postgres](https://www.postgresql.org/) database run
 
 ## How the office cleans up
 
-The office reads the Postgres service from the target's compose config (the service whose image starts with `postgres`, its published port and credentials) and connects from the host. After every engineer, reviewer or tester run, it drops each database named with that issue's prefix (`office_<repo hash>_i<N>_`). It never touches a name outside `office_`. When the Postgres running locally isn't the one the compose file describes, the `database_url` setting points the office at it (see [Usage](../USAGE.md)). Otherwise a repo whose Postgres isn't in a compose file, or isn't published to the host, gets no cleanup. See [Architecture](../ARCHITECTURE.md) for the details.
+The office reads the Postgres service from the target's compose config (the service whose image starts with `postgres`, its published port and credentials) and connects from the host. After every engineer, reviewer or tester run, it drops each database named with that issue's prefix (`office_<repo hash>_i<N>_`). It never touches a name outside `office_`. Containers an agent starts are cleaned up separately, whatever the stack (see [Architecture](../ARCHITECTURE.md)). When the Postgres running locally isn't the one the compose file describes, the `database_url` setting points the office at it (see [Usage](../USAGE.md)). Otherwise a repo whose Postgres isn't in a compose file, or isn't published to the host, gets no cleanup. See [Architecture](../ARCHITECTURE.md) for the details.
 
 ## Agent guidance
 
 - Name every database you create with your database prefix, through the repo's overrides (dev, test and end-to-end). The office drops them when your run ends.
 - Never drop, migrate, reseed or write test data into a database you didn't create, the shared dev database included.
-- Start Postgres with `docker compose up -d postgres` only if it isn't already running. Other checkouts share the same server, so never stop it or remove its volume.
+- Start Postgres with `docker compose up -d postgres` only if it isn't already running. Other checkouts share the same server, so never stop it or remove its volume. Started from a worktree, it belongs to that run's compose project; the office keeps it after the run because it publishes a shared port, and removes it at the next start.
 
 ## Deploying
 
