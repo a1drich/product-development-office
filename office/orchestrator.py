@@ -324,6 +324,9 @@ class Office:
         """Every target needs impeccable before design work. If the clone doesn't have it,
         file a ready, p0 issue so an engineer adds it in a PR that is reviewed and tested
         like any other change. The office never commits to the target itself."""
+        if not readiness.release_command(self.ws.clone):
+            log.warning("no release command (`make release` or `npm run release`): merged "
+                        "changes are never released")
         if readiness.impeccable_installed(self.ws.clone):
             return
         if self.gh.find_issue_by_title(readiness.IMPECCABLE_TITLE):
@@ -398,10 +401,14 @@ class Office:
         self.last_summary = summary
         docs = (f"\n\nThe manual and feature catalog (live while the office runs): "
                 f"{self.docs.url}" if self.docs.available else "")
+        unreleased = ("" if readiness.release_command(self.ws.clone) else
+                      "\n\nThis repo has no release command (`make release` or `npm run "
+                      "release`), so merged changes are never released: they wait on the "
+                      "default branch until someone deploys them by hand.")
         body = (
             "The office has nothing it can act on. These issues are waiting on a human "
             "(office decisions first, then practice suggestions, then by priority):\n\n"
-            f"{summary}{docs}\n\n{mark('status')}"
+            f"{summary}{unreleased}{docs}\n\n{mark('status')}"
         )
         log.info("idle. open blockers:\n%s", summary)
         self.gh.edit_body(self.ensure_status_issue(), body)

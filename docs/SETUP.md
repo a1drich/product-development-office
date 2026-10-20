@@ -61,7 +61,7 @@ For an existing repo, work through the [integration guide](INTEGRATION.md) first
 
 The agents work best on a repo that follows the conventions below, plus those in the [stack guide](stack/README.md) for each tool it uses. A repo that already looks like this needs no extra setup.
 
-- **One verify command.** `make verify` (or `npm run verify`) runs every check and is the definition of done. Engineers run it before opening a PR, and testers run it again on the PR branch before merging.
+- **One verify command.** `make verify` (or `npm run verify`) runs every check and is the definition of done. Engineers run it before opening a PR, and testers run it again on the PR branch before merging. It must pass on a fresh clone, with no `.env` or installed dependencies, because that's where the office verifies a release: have it create a missing `.env` from `.env.example` and install missing dependencies from the lockfiles first, without rewriting them (`npm ci`, not `npm install`).
 - **Release and rollback commands (optional).** `make release` (or `npm run release`) puts the checked-out commit live (the office runs it in a checkout of the commit you approved), and `make rollback REF=<commit>` (or `npm run rollback -- <commit>`) puts an earlier commit back. With them, the office prepares each release for your approval and runs it once you approve (see [Releases](WORKFLOW.md#releases)). Each stack guide's deploying section says what they run. `AGENTS.md` states the production URL, so the tester can check the live site after a release.
 
 ### Docs site and user manual

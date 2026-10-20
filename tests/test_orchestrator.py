@@ -331,6 +331,17 @@ def test_practices_review_files_suggestions_and_records_the_run(make_office):
     assert "<!-- office:practices -->" in gh.issues[1].comments[-1].body
 
 
+def test_the_status_issue_says_when_the_repo_can_never_release(make_office, tmp_path):
+    office, gh = make_office([Issue(1, "Office status", "", {L.STATUS_ISSUE})], [])
+    office.post_summary(gh.open_issues())
+    assert "no release command" in gh.issues[1].body
+
+    (tmp_path / "Makefile").write_text("release:\n\tgit push\n")
+    office.last_summary = None
+    office.post_summary(gh.open_issues())
+    assert "no release command" not in gh.issues[1].body
+
+
 def test_waiting_parks_the_issue_until_dependencies_close(make_office):
     from datetime import timedelta
 

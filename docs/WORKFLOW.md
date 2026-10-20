@@ -76,7 +76,7 @@ Issues can end up waiting on each other, so none of them ever starts. The office
 
 ## Releases
 
-Deploying is always your decision, and a merge never triggers one. The office prepares each release, you approve it, and the office runs it and checks the result. This applies to repos with a release command (`make release` or `npm run release`; see the [setup guide](SETUP.md#2-preparing-a-target-repo)). Without one, the office merges and never releases.
+Deploying is always your decision, and a merge never triggers one. The office prepares each release, you approve it, and the office runs it and checks the result. This applies to repos with a release command (`make release` or `npm run release`; see the [setup guide](SETUP.md#2-preparing-a-target-repo)). Without one, the office merges and never releases, and says so when it starts and in the Office status issue.
 
 ```
 merges ──▶ "Release" issue (office:release, blocked:human): the changes not live yet
