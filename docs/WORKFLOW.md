@@ -71,7 +71,7 @@ Issues can end up waiting on each other, so none of them ever starts. The office
 
 - **A circular wait is refused.** If an agent returns `waiting` on an issue that already waits, directly or through others, on the agent's own issue, the office doesn't park it. It records the run as failed, with the reason, so the next run goes ahead without waiting or splits off the part that needs the other issue.
 - **An existing cycle is broken.** If waiting issues already form a cycle (say, from before this check), the office releases the most urgent one, with a comment saying why, so work goes on.
-- **Testers judge a PR against its own issue.** Something the repo lacked before the PR, such as a verify command or a user manual, doesn't fail it unless its issue asks for it. Otherwise a PR could never pass until another issue lands, while that issue waits for the PR. If it happens anyway, the send-back limit above turns it into a blocker.
+- **Engineers and testers judge work against its own issue.** Something the repo lacked before, such as a verify command or a user manual, doesn't fail a PR, and isn't a reason for an engineer to wait, unless the issue asks for it. Otherwise a PR could never pass, or never start, until another issue lands, while that issue waits for the PR. If it happens anyway, the send-back limit above turns it into a blocker.
 
 
 ## Releases
