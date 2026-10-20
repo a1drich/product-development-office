@@ -73,7 +73,7 @@ Only one office can run per repo. `office start` refuses if another is already r
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
 | `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 
-Settings such as concurrency per role (`limits`), poll intervals and the claim timeout can be overridden in `.office/config.json`. The defaults are in `office/config.py`. The config is read at startup, so changes apply from the next `office start`.
+Settings such as concurrency per role (`limits`), poll intervals and the claim timeout can be overridden in `.office/config.json`. If the target's local Postgres isn't the one its compose file describes (another project already holds that port, say), set `database_url` to `postgres://user:password@host:port/dbname` so the office drops agents' throwaway databases in the right place. The defaults are in `office/config.py`. The config is read at startup, so changes apply from the next `office start`.
 
 Ports have their own settings. Agents only use ports the office leases them (see [Architecture](ARCHITECTURE.md)), so your own dev servers and the agents never collide:
 

@@ -17,7 +17,7 @@ How the office works with a [Postgres](https://www.postgresql.org/) database run
 
 ## How the office cleans up
 
-The office reads the Postgres service from the target's compose config (the service whose image starts with `postgres`, its published port and credentials) and connects from the host. After every engineer, reviewer or tester run, it drops each database named with that issue's prefix (`office_<repo hash>_i<N>_`). It never touches a name outside `office_`. A repo whose Postgres isn't in a compose file, or isn't published to the host, gets no cleanup. See [Architecture](../ARCHITECTURE.md) for the details.
+The office reads the Postgres service from the target's compose config (the service whose image starts with `postgres`, its published port and credentials) and connects from the host. After every engineer, reviewer or tester run, it drops each database named with that issue's prefix (`office_<repo hash>_i<N>_`). It never touches a name outside `office_`. When the Postgres running locally isn't the one the compose file describes, the `database_url` setting points the office at it (see [Usage](../USAGE.md)). Otherwise a repo whose Postgres isn't in a compose file, or isn't published to the host, gets no cleanup. See [Architecture](../ARCHITECTURE.md) for the details.
 
 ## Agent guidance
 

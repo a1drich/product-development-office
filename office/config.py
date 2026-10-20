@@ -51,6 +51,9 @@ class Config:
     # {"oauth": [3011, 3012]} for a sign-in provider's allowed origins. One issue at a
     # time claims a set with `office-lease <name>`.
     fixed_ports: dict[str, list[int]] = field(default_factory=dict)
+    # The target's local Postgres, as postgres://user:password@host:port/dbname, for
+    # dropping agents' throwaway databases. Unset, it's read from the compose file.
+    database_url: str | None = None
     # Codex sandbox per role. Testers run Docker and dev servers, so they need full access.
     codex_sandbox: dict[str, str] = field(
         default_factory=lambda: {"reviewer": "workspace-write", "tester": "danger-full-access"}

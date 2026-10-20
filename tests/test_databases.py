@@ -3,7 +3,7 @@ import json
 import pytest
 
 from office import databases
-from office.databases import Databases, compose_postgres, prefix_for, repo_prefix
+from office.databases import Databases, compose_postgres, from_url, prefix_for, repo_prefix
 from office.shell import Result
 
 COMPOSE = {"services": {
@@ -51,3 +51,13 @@ def test_drop_never_raises(monkeypatch, tmp_path):
     dbs = Databases(tmp_path, "acme/app")
     monkeypatch.setattr(dbs, "names", lambda prefix: (_ for _ in ()).throw(OSError("down")))
     assert dbs.drop() == []
+
+
+def test_a_database_url_overrides_the_compose_file(monkeypatch, tmp_path):
+    fake_compose(monkeypatch, tmp_path, COMPOSE)
+    s = Databases(tmp_path, "acme/app", "postgres://app:p%40ss@localhost:5547/app_main").server
+    assert (s.host, s.port, s.user, s.password, s.dbname) == ("localhost", 5547, "app", "p@ss",
+                                                              "app_main")
+    assert from_url("postgresql://app@db").port == 5432
+    with pytest.raises(ValueError):
+        from_url("mysql://app@db/app")

@@ -107,7 +107,7 @@ class Office:
         self.docs = DocsServer(ws.clone, cfg.docs_port, ws.docs_log)
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
-        self.dbs = databases.Databases(ws.clone, gh.repo)
+        self.dbs = databases.Databases(ws.clone, gh.repo, cfg.database_url)
         self.stacks = stacks.load()
         self.real_gh = shutil.which("gh")
         self.leases = ports.Leases(ws.leases, cfg.agent_ports, cfg.ports_per_agent,

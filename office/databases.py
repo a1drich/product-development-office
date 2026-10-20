@@ -15,6 +15,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from office.shell import run
 
@@ -68,17 +69,29 @@ def compose_postgres(root: Path) -> Server | None:
     return None
 
 
+def from_url(url: str) -> Server:
+    """A `postgres://user:password@host:port/dbname` URL, such as the `database_url`
+    setting, for a Postgres the compose file doesn't describe."""
+    u = urlsplit(url)
+    if u.scheme not in ("postgres", "postgresql") or not u.hostname:
+        raise ValueError(f"not a postgres:// URL: {url!r}")
+    user = unquote(u.username or "postgres")
+    return Server(u.hostname, u.port or 5432, user, unquote(u.password or ""),
+                  u.path.lstrip("/") or user)
+
+
 class Databases:
-    def __init__(self, root: Path, repo: str):
+    def __init__(self, root: Path, repo: str, url: str | None = None):
         self.root = root
         self.prefix = repo_prefix(repo)
+        self.url = url
         self._server: Server | None = None
         self._looked = False
 
     @property
     def server(self) -> Server | None:
         if not self._looked:
-            self._server = compose_postgres(self.root)
+            self._server = from_url(self.url) if self.url else compose_postgres(self.root)
             self._looked = True
         return self._server
 
