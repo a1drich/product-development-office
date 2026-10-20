@@ -25,7 +25,7 @@ def check_api_keys() -> Check:
 
 
 def check_gh() -> Check:
-    res = run(["gh", "auth", "status"], check=False)
+    res = run(["gh", "auth", "status", "--active"], check=False)
     if not res.ok:
         return Check("gh", False, "not logged in: run `gh auth login`")
     return Check("gh", True, "logged in")
