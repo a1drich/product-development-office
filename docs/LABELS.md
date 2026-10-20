@@ -43,7 +43,7 @@ Only repos with a release command get these. See [Releases](WORKFLOW.md#releases
 
 | Label | Color | Meaning | Set by | Removed by |
 |---|---|---|---|---|
-| `office:waiting` | `#EDEDED` | Waiting for other issues to close, such as a feature that builds on an unmerged PR. Not a human decision. | The office, after a `waiting` verdict; a comment records which issues it waits for | The office, once all of those issues are closed; the issue then continues from its status label. Removing it yourself makes the office proceed immediately. |
+| `office:waiting` | `#EDEDED` | Waiting for other issues to close, such as a feature that builds on an unmerged PR. Not a human decision. | The office, after a `waiting` verdict; a comment records which issues it waits for | The office, once all of those issues are closed, or to release the most urgent issue of a set waiting on each other; the issue then continues from its status label. Removing it yourself makes the office proceed immediately. |
 | `office:practice` | `#C2E0C6` | A suggested improvement to how the repo is built or maintained | The office, on every `Practice:` issue an agent or the practices review suggests. It also gets `blocked:human` while `practices_need_approval` is on (the default). | Stays while the issue is open. While three or more are open, the daily practices review pauses. |
 | `office:status` | `#BFDADC` | The single "Office status" issue: everything waiting on you, the docs-site link, and changed screens after each merge | The office, on the issue it creates for this | Never; `office clean --github` closes the issue |
 

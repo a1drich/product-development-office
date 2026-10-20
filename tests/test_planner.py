@@ -3,9 +3,14 @@ from datetime import UTC, datetime, timedelta
 from office import labels as L
 from office.gh import Comment, Issue
 from office.planner import (
+    BOUNCE_MARK,
     CLAIM_MARK,
     FAILED_MARK,
     blocks_section,
+    bounces,
+    candidates,
+    circular,
+    cycle_breakers,
     failures,
     plan,
     task_for,
@@ -145,3 +150,31 @@ def test_a_release_issue_waits_for_approval_then_deploys_checks_and_rolls_back()
     assert kind(issue(1, L.RELEASE, L.RELEASE_APPROVED, comments=live)) is None
     back = [*live, comment("Rolled back.\n<!-- office:rolled-back 0000aaa -->")]
     assert kind(issue(1, L.RELEASE, L.BLOCKED, L.RELEASE_APPROVED, comments=back)) == "deploy"
+
+
+def waits(n, *deps, labels=()):
+    return issue(n, L.WAITING, *labels,
+                 comments=[comment(f"<!-- office:depends {','.join(map(str, deps))} -->")])
+
+
+def test_a_wait_that_would_close_a_cycle_is_spotted():
+    issues = [waits(3, 8), issue(8, L.IN_PROGRESS), waits(9, 3)]
+    assert circular(issues, 8, [3]) == [3]  # 3 already waits for 8
+    assert circular(issues, 8, [9]) == [9]  # 9 waits for 3, which waits for 8
+    assert circular(issues, 8, [5]) == []
+
+
+def test_issues_waiting_on_each_other_are_released_most_urgent_first():
+    issues = [waits(3, 8), waits(8, 3, labels=["priority:p0"]), waits(4, 3)]
+    assert cycle_breakers(issues) == {8}  # 4 waits for the cycle but isn't in it
+    found = candidates(issues, {}, NOW, TTL, repo="acme/app")
+    assert [(t.kind, t.issue) for t in found] == [("break_cycle", 8)]
+    assert candidates(issues, {8: "pm"}, NOW, TTL) == []  # not while it's being worked on
+    assert cycle_breakers([waits(3, 8), issue(8, L.READY)]) == set()
+
+
+def test_bounces_count_since_a_human_last_looked():
+    bounced = comment(f"Testing failed.\n{BOUNCE_MARK}")
+    assert bounces(issue(1, comments=[bounced, bounced])) == 2
+    reset = comment("Unblocked by #9.\n<!-- office:unblocked -->")
+    assert bounces(issue(1, comments=[bounced, bounced, reset, bounced])) == 1

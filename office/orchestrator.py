@@ -21,13 +21,15 @@ from office.agents import AgentResult, Verdict, render, run_agent
 from office.config import ROOT, Config
 from office.docs_server import DocsServer
 from office.gh import GitHub, Issue, branch_name
-from office.planner import CLAIM_MARK, FAILED_MARK, Task
+from office.planner import BOUNCE_MARK, CLAIM_MARK, FAILED_MARK, Task
 from office.readiness import verify_command
 from office.workspace import Workspace, folder_name
 
 log = logging.getLogger("office")
 
 MAX_FAILURES = 3
+# Times review or testing can send an issue back before a human is asked to look.
+MAX_BOUNCES = 3
 CI_WAIT_SECONDS = 30 * 60
 STATUS_TITLE = "Office status"
 RELEASE_TITLE = "Release"
@@ -355,6 +357,16 @@ class Office:
             deps = ", ".join(f"#{n}" for n in planner.dependencies(issue)) or "its dependencies"
             self.gh.comment(issue.number, f"{deps} closed; back in the queue.\n{mark('unwait')}")
             log.info("#%s no longer waiting", issue.number)
+        elif task.kind == "break_cycle":
+            cycle = planner.cycle_of(self.gh.open_issues(), issue.number)
+            others = ", ".join(f"#{n}" for n in cycle if n != issue.number) or "each other"
+            self.gh.edit_labels(issue.number, remove=[L.WAITING])
+            self.gh.comment(issue.number,
+                            f"This issue and {others} were waiting on each other, so none could "
+                            "start. This one is the most urgent, so it goes ahead now: do the "
+                            "work that doesn't need the others, and split off the rest as a new "
+                            f"issue that depends on them.\n{mark('cycle')}")
+            log.info("#%s released from a waiting cycle with %s", issue.number, others)
         elif task.kind == "close_done":
             self.gh.close_issue(issue.number, f"Done.\n{mark('closed')}")
 
@@ -544,7 +556,7 @@ class Office:
         if verdict.outcome == "approve":
             self.advance(issue, L.TESTING, verdict, f"Review approved PR #{pr['number']}")
         elif verdict.outcome == "changes":
-            self.advance(issue, L.READY, verdict, f"Review requested changes on PR #{pr['number']}")
+            self.bounce(issue, verdict, f"Review requested changes on PR #{pr['number']}")
 
     def do_test(self, issue: Issue, task: Task) -> None:
         pr = self.pr_or_requeue(issue, task)
@@ -556,7 +568,7 @@ class Office:
         if not verdict:
             return
         if verdict.outcome == "fail":
-            self.advance(issue, L.READY, verdict, f"Testing failed PR #{pr['number']}")
+            self.bounce(issue, verdict, f"Testing failed PR #{pr['number']}")
             return
         if verdict.outcome == "pass":
             self.merge(issue, task, pr["number"], verdict)
@@ -570,9 +582,9 @@ class Office:
             if self.stopping.is_set():
                 return  # still `status:testing`; the next start tests it again
             if "fail" in detail.lower() or time.monotonic() > deadline:
-                self.advance(issue, L.READY, verdict,
-                             f"Tests passed locally but CI did not pass on PR #{pr}:\n\n```\n"
-                             f"{detail[-1500:]}\n```")
+                self.bounce(issue, verdict,
+                            f"Tests passed locally but CI did not pass on PR #{pr}:\n\n```\n"
+                            f"{detail[-1500:]}\n```")
                 return
             self.stopping.wait(60)
         # Another PR may have merged while this one was being tested.
@@ -848,6 +860,15 @@ class Office:
             self.record_failure(issue, task, "returned `waiting` without `depends_on`",
                                 status=L.READY if issue.status == L.IN_PROGRESS else None)
             return
+        loop = planner.circular(self.gh.open_issues(), issue.number, deps)
+        if loop:
+            self.record_failure(
+                issue, task,
+                f"waiting for {', '.join(f'#{n}' for n in loop)} would be circular: it already "
+                f"waits, directly or not, for #{issue.number}, so neither would ever start. Go "
+                "ahead without waiting for it, or split the part that needs it into a new issue.",
+                status=L.READY if issue.status == L.IN_PROGRESS else None)
+            return
         if issue.status == L.IN_PROGRESS:
             self.gh.set_status(issue, L.READY)
         self.gh.edit_labels(issue.number, add=[L.WAITING])
@@ -905,6 +926,34 @@ class Office:
             self.gh.set_status(issue, L.READY)
         self.gh.comment(issue.number, f"Blocked on #{number}.\n{mark('blocked')}")
         log.info("#%s blocked on #%s", issue.number, number)
+
+    def bounce(self, issue: Issue, verdict: Verdict, prefix: str) -> None:
+        """Sends the work back to an engineer. After MAX_BOUNCES in a row, a human is asked
+        instead: the same work going round and round usually means something the engineer
+        can't fix, such as a gap only another issue fills."""
+        count = planner.bounces(issue) + 1
+        self.gh.set_status(issue, L.READY)
+        self.gh.comment(issue.number, f"{prefix}. {verdict.summary}\n\nNext: `{L.READY}` "
+                                      f"({count}/{MAX_BOUNCES})\n{BOUNCE_MARK}")
+        log.info("#%s -> %s (sent back %s/%s)", issue.number, L.READY, count, MAX_BOUNCES)
+        if count >= MAX_BOUNCES:
+            self.file_blocker(issue, Verdict(
+                outcome="blocked",
+                summary=f"sent back {count} times",
+                blocker={
+                    "title": f"#{issue.number} keeps coming back",
+                    "decision": f"Review or testing has sent #{issue.number} back to an "
+                                f"engineer {count} times in a row. How should it proceed?",
+                    "context": f"Last time: {prefix}. {verdict.summary[-1000:]}",
+                    "options": [
+                        "Narrow or clarify the acceptance criteria, then remove `blocked:human`",
+                        "Land the issue it really depends on first, then remove `blocked:human`",
+                        "Close the issue",
+                    ],
+                    "recommendation": "Read the review and test comments on its PR: if they "
+                                      "keep naming the same gap, that gap is its own issue.",
+                },
+            ))
 
     def advance(self, issue: Issue, status: str, verdict: Verdict, prefix: str = "") -> None:
         self.gh.set_status(issue, status)

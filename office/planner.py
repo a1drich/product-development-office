@@ -11,13 +11,17 @@ from office.gh import Issue
 
 CLAIM_MARK = "<!-- office:claim -->"
 FAILED_MARK = "<!-- office:failed -->"
+# A review asking for changes or a failed test, sending the work back to an engineer.
+BOUNCE_MARK = "<!-- office:bounced -->"
+# Comments after which bounces count from zero again: a human has looked at the issue.
+RESET_MARKS = ("<!-- office:blocked -->", "<!-- office:unblocked -->")
 DEPENDS_MARK = re.compile(r"<!-- office:depends ([\d, ]+) -->")
 # A release issue's comments record each deploy and rollback with the commit it was at.
 RELEASE_MARK = re.compile(r"<!-- office:(deployed|rolled-back) ([0-9a-f]{7,40}) -->")
 HEAD_MARK = re.compile(r"<!-- office:head ([0-9a-f]{7,40}) -->")
 
 # Housekeeping kinds need no agent; the orchestrator does them directly.
-HOUSEKEEPING = {"release", "close_done", "unwait"}
+HOUSEKEEPING = {"release", "close_done", "unwait", "break_cycle"}
 
 ROLE_BY_KIND = {
     "triage": "pm",
@@ -73,6 +77,17 @@ def failures(issue: Issue) -> int:
     return count
 
 
+def bounces(issue: Issue) -> int:
+    """Times the work went back to an engineer since a human last looked at the issue."""
+    count = 0
+    for c in reversed(issue.comments):
+        if any(m in c.body for m in RESET_MARKS):
+            break
+        if BOUNCE_MARK in c.body:
+            count += 1
+    return count
+
+
 def dependencies(issue: Issue) -> list[int]:
     """The issues the latest waiting comment says this one depends on."""
     for c in reversed(issue.comments):
@@ -80,6 +95,52 @@ def dependencies(issue: Issue) -> list[int]:
         if m:
             return [int(n) for n in re.findall(r"\d+", m.group(1))]
     return []
+
+
+def waiting_graph(issues: list[Issue]) -> dict[int, set[int]]:
+    """Which open issues each waiting issue waits for."""
+    open_numbers = {i.number for i in issues}
+    return {i.number: set(dependencies(i)) & open_numbers
+            for i in issues if L.WAITING in i.labels}
+
+
+def reachable(graph: dict[int, set[int]], start: int) -> set[int]:
+    """Every issue `start` waits for, directly or through the issues it waits for."""
+    seen: set[int] = set()
+    todo = list(graph.get(start, ()))
+    while todo:
+        n = todo.pop()
+        if n not in seen:
+            seen.add(n)
+            todo += graph.get(n, ())
+    return seen
+
+
+def circular(issues: list[Issue], number: int, deps: list[int]) -> list[int]:
+    """The deps that already wait, directly or not, for `number`: waiting on them would
+    leave both waiting forever."""
+    graph = waiting_graph(issues)
+    return [d for d in deps if d == number or number in reachable(graph, d)]
+
+
+def cycle_of(issues: list[Issue], number: int) -> list[int]:
+    """The waiting issues in a cycle with `number`, itself included, or [] if none."""
+    graph = waiting_graph(issues)
+    if number not in reachable(graph, number):
+        return []
+    return sorted(n for n in graph if n == number or (number in reachable(graph, n)
+                                                       and n in reachable(graph, number)))
+
+
+def cycle_breakers(issues: list[Issue]) -> set[int]:
+    """For each cycle of waiting issues, the most urgent one, to release so work goes on."""
+    by_number = {i.number: i for i in issues}
+    breakers = set()
+    for n in waiting_graph(issues):
+        cycle = cycle_of(issues, n)
+        if cycle:
+            breakers.add(min(cycle, key=lambda m: (priority(by_number[m]), m)))
+    return breakers
 
 
 def deployed(issue: Issue) -> str | None:
@@ -169,6 +230,9 @@ def candidates(
         if task is None or task.kind in held:
             continue
         found.append(Task(task.kind, task.issue, task.priority, repo))
+    by_number = {i.number: i for i in issues}
+    for n in cycle_breakers(issues) - set(running):
+        found.append(Task("break_cycle", n, priority(by_number[n]), repo))
     return sorted(found, key=lambda t: (t.priority, t.issue))
 
 

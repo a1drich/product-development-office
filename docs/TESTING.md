@@ -4,7 +4,7 @@ How the office verifies every change before it merges, and how to test the offic
 
 ## How a change is verified
 
-No PR merges until it has passed every step below. A failure at any step sends the issue back to an engineer, with the reason as a comment.
+No PR merges until it has passed every step below. A failure at any step sends the issue back to an engineer, with the reason as a comment, and the third send-back in a row files a blocker instead. A PR is judged against its own issue: something the repo lacked before it, such as a verify command or a user manual, doesn't fail it unless the issue asks for it. Without a verify command, the tester runs the checks the repo's `AGENTS.md` documents.
 
 1. **The engineer's own gate.** Before opening or updating a PR, the engineer merges the latest base branch, then runs the repo's verify command (`make verify` or `npm run verify`) until it passes. For anything users see, it also builds the docs site with `mkdocs build --strict`.
 2. **A merge-conflict check.** Before a review or test, and again just before merging (another PR may have merged while this one was being tested), the office asks GitHub whether the PR merges cleanly. A conflicting PR goes straight back to an engineer, without spending a Codex run, and the conflict isn't counted as a failure.

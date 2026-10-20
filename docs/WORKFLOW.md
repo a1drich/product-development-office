@@ -63,7 +63,15 @@ Option 2 for v1. Revisit after launch.
 
 The blocked issue also gets `blocked:human` and a comment linking the blocker. To answer, comment on the blocker with your decision and remove its `blocked:human` label. On the next cycle the PM reads the answer and updates the issues listed under "Blocks". The office then unblocks them and closes the blocker.
 
-If an agent fails on the same issue three times in a row, for example by crashing, timing out or returning no verdict, the office files a blocker for it instead of retrying forever.
+If an agent fails on the same issue three times in a row, for example by crashing, timing out or returning no verdict, the office files a blocker for it instead of retrying forever. The same goes for an issue that review or testing sends back to an engineer three times in a row: work that keeps coming back usually needs something the engineer can't provide, such as a gap only another issue fills.
+
+## Circular dependencies
+
+Issues can end up waiting on each other, so none of them ever starts. The office guards against this in three ways:
+
+- **A circular wait is refused.** If an agent returns `waiting` on an issue that already waits, directly or through others, on the agent's own issue, the office doesn't park it. It records the run as failed, with the reason, so the next run goes ahead without waiting or splits off the part that needs the other issue.
+- **An existing cycle is broken.** If waiting issues already form a cycle (say, from before this check), the office releases the most urgent one, with a comment saying why, so work goes on.
+- **Testers judge a PR against its own issue.** Something the repo lacked before the PR, such as a verify command or a user manual, doesn't fail it unless its issue asks for it. Otherwise a PR could never pass until another issue lands, while that issue waits for the PR. If it happens anyway, the send-back limit above turns it into a blocker.
 
 
 ## Releases

@@ -23,6 +23,7 @@ NEXT = {
     "release": "its stale claim is released",
     "close_done": "it is closed",
     "unwait": "it is requeued (dependencies closed)",
+    "break_cycle": "it is released from a waiting cycle",
     "deploy": "the office releases it (you approved)",
     "rollback": "the office rolls it back (you approved)",
     "live_check": "Codex checks the live site",
@@ -40,11 +41,14 @@ class Row:
 
 def describe(issues: list[Issue], now: datetime, claim_ttl: timedelta) -> list[Row]:
     open_numbers = {i.number for i in issues}
+    breakers = planner.cycle_breakers(issues)
     rows = []
     for issue in issues:
         if L.STATUS_ISSUE in issue.labels:
             continue
         task = planner.task_for(issue, now, claim_ttl, open_numbers)
+        if issue.number in breakers:
+            task = planner.Task("break_cycle", issue.number)
         p = planner.priority(issue)
         status = issue.status.removeprefix("status:") if issue.status else "new"
         if task:

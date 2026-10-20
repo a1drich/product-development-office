@@ -23,8 +23,8 @@ What keeps it running unattended:
 
 - **GitHub is the only state.** Stop the office at any time: Ctrl-C or `office stop` lets running agents finish first, and `office start` picks up from the labels.
 - **Agents never guess.** A decision only you can make becomes a blocker issue you can answer in under a minute, and the office carries on with other work.
-- **Sequencing isn't your problem.** An issue that needs another to land first waits, and is requeued when that issue closes.
-- **Failures are contained.** A step that fails three times becomes a blocker, a role that hits its usage limit pauses (in every repo, since they share the subscription) while the others continue, and anything an agent leaves running is stopped.
+- **Sequencing isn't your problem.** An issue that needs another to land first waits, and is requeued when that issue closes. Waits that would go round in a circle are refused or broken.
+- **Failures are contained.** A step that fails three times, or work sent back three times, becomes a blocker, a role that hits its usage limit pauses (in every repo, since they share the subscription) while the others continue, and anything an agent leaves running is stopped.
 
 ## 2. One feature, from request to release
 

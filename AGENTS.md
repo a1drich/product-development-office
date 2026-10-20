@@ -58,7 +58,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
 - **Merging and releasing are treated differently.**
   - The Tester merges a PR only after the target repo's full verification gate passes locally and the acceptance criteria are verified. CI must also pass if the repo has it.
   - Deploying and releasing are always a human decision. A merge never triggers either. The office collects merged changes in one `office:release` issue, and releases only when a repo admin adds `release:approved`: it checks the default branch hasn't moved, runs verify, then the target's `make release`, and Codex checks the live site. It rolls back only on `rollback:approved`. Agents never release, and can't set either label.
-- **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks, and is labelled `office:blocker` plus `blocked:human`. Three failures in a row on one issue also file a blocker.
+- **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks, and is labelled `office:blocker` plus `blocked:human`. Three failures in a row on one issue also file a blocker, and so do three send-backs in a row by review or testing.
 - **Startup has a fixed sequence:**
   1. Ask for the target repos (`owner/name`, one or more), or read them from CLI arguments or saved config.
   2. Check `gh`, `claude` and `codex` auth.
@@ -71,7 +71,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
 - **The office cleans up after agents.** Anything an agent leaves running in its worktree or on its leased ports is stopped, and every database it created under its issue's `office_` prefix is dropped after the run, even a failed one. The office never drops a database outside that prefix.
 - **Agents only use leased ports.** Each engineer, reviewer and tester run gets its own block from `agent_ports`, never one in `reserved_ports` or already in use. Fixed sets that must match outside configuration are claimed with `office-lease`, one issue at a time.
 - **The docs site is part of every delivery.** The target's MkDocs site and its user manual at `docs/manual/` are updated in the same PR as each user-visible change, screenshots come from `office shoot`, and `mkdocs build --strict` must pass. `office start` serves the site live from the main clone.
-- **Sequencing isn't a human decision.** "Wait for #N" is a `waiting` verdict with `depends_on`, not a blocker. Human requests that conflict with documented scope are blocked, not closed.
+- **Sequencing isn't a human decision.** "Wait for #N" is a `waiting` verdict with `depends_on`, not a blocker. A wait that would close a cycle is refused, and an existing cycle is broken by releasing its most urgent issue. Human requests that conflict with documented scope are blocked, not closed.
 - **Design uses impeccable.** The Designer runs impeccable's `shape` command and produces markdown only (a design doc plus an implementation prompt), never images or Figma files. Engineers use impeccable for UI work, and the tester runs its `detect` command on UI changes.
 - **Stopping never loses work.** The first Ctrl-C or `office stop` drains: nothing new starts and running agents finish. Only a second Ctrl-C or `--now` ends agents, and those runs never count as failures. Only one office runs per repo.
 - **The orchestrator runs locally** as a long-running process, not on a server or in GitHub Actions.

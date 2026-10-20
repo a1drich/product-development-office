@@ -782,3 +782,45 @@ def test_same_topic():
         "Practice: Add `npm run verify` (lint + build + route smoke test) and run it in CI",
         "Practice: Give each route its own title, meta description and canonical URL")
     assert not orchestrator.same_topic("Fix login error on mobile", "Fix login button on desktop")
+
+
+# --- circular dependencies --------------------------------------------------------------
+
+def depends(*deps):
+    return Comment("office", f"<!-- office:depends {','.join(map(str, deps))} -->",
+                   datetime.now(UTC))
+
+
+def test_a_circular_wait_is_refused_as_a_failed_run(make_office):
+    office, gh = make_office([Issue(3, "verify", "", {L.TRIAGE, L.WAITING},
+                                    comments=[depends(8)]),
+                              Issue(8, "deps", "", {L.READY})],
+                             [Verdict("waiting", "needs verify first", depends_on=[3])])
+    office.execute(Task("implement", 8))
+    issue = gh.issues[8]
+    assert L.WAITING not in issue.labels and L.READY in issue.labels
+    assert "would be circular" in issue.comments[-1].body
+    assert FAILED_MARK in issue.comments[-1].body
+
+
+def test_an_existing_cycle_is_broken_by_releasing_one_issue(make_office):
+    office, gh = make_office([Issue(3, "verify", "", {L.TRIAGE, L.WAITING},
+                                    comments=[depends(8)]),
+                              Issue(8, "deps", "", {L.READY, L.WAITING},
+                                    comments=[depends(3)])], [])
+    office.start(Task("break_cycle", 3))
+    assert L.WAITING not in gh.issues[3].labels and L.WAITING in gh.issues[8].labels
+    assert "#8 were waiting on each other" in gh.issues[3].comments[-1].body
+
+
+def test_the_third_send_back_in_a_row_asks_a_human(make_office):
+    office, gh = make_office([Issue(8, "deps", "", {L.TESTING})],
+                             [Verdict("fail", "no verify command")] * 3)
+    gh.prs[8] = {"number": 10}
+    for n in range(3):
+        gh.set_status(gh.issues[8], L.TESTING)
+        office.execute(Task("test", 8))
+        blocked = L.BLOCKED in gh.issues[8].labels
+        assert blocked == (n == 2)
+    blocker = next(i for i in gh.issues.values() if L.BLOCKER in i.labels)
+    assert "keeps coming back" in blocker.title
