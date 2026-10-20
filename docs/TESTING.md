@@ -20,6 +20,8 @@ No PR merges until it has passed every step below. A failure at any step sends t
    - stops every server it started; the office also stops anything left running in the worktree
 5. **CI and merge.** After a `pass`, the office waits up to 30 minutes for the PR's CI checks, squash-merges, deletes the branch and closes the issue. If CI fails, the issue goes back to an engineer. If the repo has no CI, the local verification stands on its own.
 
+After a release you approve, the default branch is verified once more before anything goes live, and the tester then checks the live site: it opens every page in `docs/manual/pages.json` on the production URL from `AGENTS.md`, and checks the released changes are there and work. It only reads the live site. A failure never rolls back on its own; it asks you (see [Releases](WORKFLOW.md#releases)).
+
 Bugs a tester finds outside the issue's scope are filed as new issues. Problems with the office's own tools never go into the target repo's backlog.
 
 ## UI and UX testing

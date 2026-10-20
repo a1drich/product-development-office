@@ -5,6 +5,7 @@ The decisions that shape the office, and the projects it borrows from. Read thes
 - **Language:** Python. The orchestrator shells out to `gh`, `claude` and `codex`.
 - **Runs on:** a local machine, as a long-running process. No server and no GitHub Actions.
 - **Merging:** agents merge PRs themselves, but only after the change has been fully tested locally: the full test suite passes and the Codex tester has verified the acceptance criteria. CI must also pass when the target repo has CI.
+- **Releasing:** always the owner's decision, made by adding an approval label to the one open release issue. The office does the rest: it lists what's waiting, checks the default branch hasn't moved since, runs verify and the target's own `make release`, has Codex check the live site, and only rolls back on a second approval. Agents never release, and the office never rolls back on its own, because a rollback across a schema change can do as much harm as a bad release.
 - **Design deliverables:** prompts and design documents (markdown) only. No Figma, no image mockups.
 - **Delivery includes docs:** every target repo has an MkDocs site with a user manual and feature catalog, kept current in every PR and served live while the office runs.
 - **UI testing:** [Playwright](https://playwright.dev/) screenshots and objective UX checks, posted on PRs.

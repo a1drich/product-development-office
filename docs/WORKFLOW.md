@@ -1,6 +1,6 @@
 # Workflow
 
-Who does what, and how an issue moves from request to merge. The orchestrator polls the target repo, finds issues in each state and dispatches them to the matching role. For how a PR is verified, see [Testing](TESTING.md).
+Who does what, and how an issue moves from request to merge and then into a release. The orchestrator polls the target repo, finds issues in each state and dispatches them to the matching role. For how a PR is verified, see [Testing](TESTING.md).
 
 ## The team
 
@@ -10,7 +10,7 @@ Who does what, and how an issue moves from request to merge. The orchestrator po
 | **Designer** | Claude Code (Claude subscription) + [impeccable](https://github.com/pbakaus/impeccable) | Uses impeccable's `shape` command to turn product issues into markdown design documents (flows, screens, states, copy, tokens and components). Each one includes the user-manual entry, the screens to capture and an implementation prompt for engineers, and is posted on the issue before engineering starts. |
 | **Engineer** (1..n) | Claude Code (Claude subscription) | Picks up `ready` issues, works in an isolated git worktree, implements the change (using impeccable for any UI work), runs the verify command and opens a PR linked to the issue. |
 | **Reviewer** | Codex CLI (ChatGPT/Codex subscription) | Reviews every PR for correctness, security and maintainability. It either approves or requests changes, and changes go back to an engineer. |
-| **Tester** | Codex CLI (ChatGPT/Codex subscription) | Checks out approved PRs locally and verifies them against the acceptance criteria: merges in the base branch, runs the full verify command, writes missing tests, exercises the change, screenshots and UX-checks every page with [Playwright](https://playwright.dev/) (`office shoot`), checks the user manual and runs the impeccable detector on UI changes. If it passes, the office merges the PR; otherwise it goes back to an engineer, and any bugs found are filed as issues. |
+| **Tester** | Codex CLI (ChatGPT/Codex subscription) | Checks out approved PRs locally and verifies them against the acceptance criteria: merges in the base branch, runs the full verify command, writes missing tests, exercises the change, screenshots and UX-checks every page with [Playwright](https://playwright.dev/) (`office shoot`), checks the user manual and runs the impeccable detector on UI changes. If it passes, the office merges the PR; otherwise it goes back to an engineer, and any bugs found are filed as issues. After each release you approve, it checks the live site. |
 
 ## The flow
 
@@ -39,7 +39,7 @@ Labels drive everything: one status label per issue says where it is, and the of
 
 ## Blockers
 
-Anything that needs human input becomes a blocker. Examples are product direction, ambiguous requirements, credentials or access, spending money, legal or brand questions, and irreversible actions such as deploying or releasing. Merging a fully tested PR is *not* a blocker.
+Anything that needs human input becomes a blocker. Examples are product direction, ambiguous requirements, credentials or access, spending money, legal or brand questions, and irreversible actions such as changing production settings. Merging a fully tested PR is *not* a blocker. Releasing isn't one either: it has its own approval (see [Releases](#releases)).
 
 An agent never files a blocker itself. It returns the decision, context, options and recommendation in its verdict, and the office files a GitHub issue labelled `office:blocker` and `blocked:human` from this template, so every blocker can be answered in under a minute:
 
@@ -65,6 +65,31 @@ The blocked issue also gets `blocked:human` and a comment linking the blocker. T
 
 If an agent fails on the same issue three times in a row, for example by crashing, timing out or returning no verdict, the office files a blocker for it instead of retrying forever.
 
+
+## Releases
+
+Deploying is always your decision, and a merge never triggers one. The office prepares each release, you approve it, and the office runs it and checks the result. This applies to repos with a release command (`make release` or `npm run release`; see the [setup guide](SETUP.md#2-preparing-a-target-repo)). Without one, the office merges and never releases.
+
+```
+merges ──▶ "Release" issue (office:release, blocked:human): the changes not live yet
+               │ you add release:approved (on GitHub, or `office release owner/name`)
+               ▼
+           office: checks a repo admin added it and the default branch hasn't moved,
+                   runs verify on it, then the release command
+               │
+               ▼  status:testing
+           Tester (Codex): checks the live site ──pass──▶ closed
+               │ fail
+               ▼  blocked:human
+           you add rollback:approved ──▶ office runs the rollback command ──▶ pending again
+           (or close the issue to keep the release)
+```
+
+- **One release issue at a time.** A merge that changes something users can see (it updates `docs/manual/`) opens the "Release" issue if none is waiting. Every later merge is added to its list until you approve it, so a busy day is one release to approve, not one per PR. A merge nobody can see opens nothing, and goes out with the next release.
+- **What you approve is what ships.** The issue records the commit its list was written at. If the default branch has moved by the time the office runs the release, it takes your approval off and asks you to look again. A failing verify on the default branch also stops the release before anything goes live.
+- **Only you approve.** The office acts on `release:approved` and `rollback:approved` only when a repo admin added them, and its `gh` wrapper refuses to let an agent add them.
+- **It never rolls back on its own.** When the live check fails, the issue waits for you with the tester's findings. Add `rollback:approved` to have the office run the rollback command (`make rollback REF=<commit>`, given the last release's commit), or close the issue to keep the release. After a rollback, the same changes wait for approval again, together with the fix once it merges.
+- **One comment per step.** The release issue's body is updated in place as merges land, which sends no notifications. You get a comment when the release runs or is refused, and when the live check reports.
 
 ## Practice suggestions
 

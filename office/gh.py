@@ -125,6 +125,28 @@ class GitHub:
         )
         return [_issue(d) for d in data]
 
+    def labelled_issues(self, label: str, state: str = "open", limit: int = 10) -> list[Issue]:
+        """Issues with the label, newest first."""
+        data = self._gh_json(
+            "issue", "list", "--state", state, "--label", label, "--limit", str(limit),
+            "--json", "number,title,body,labels,state,comments",
+        )
+        return [_issue(d) for d in data]
+
+    def label_added_by(self, number: int, label: str) -> str | None:
+        """Who last added the label to the issue."""
+        res = run(["gh", "api", "--paginate", f"repos/{self.repo}/issues/{number}/events",
+                   "--jq", f'.[] | select(.event == "labeled" and .label.name == "{label}") '
+                           '| .actor.login'])
+        logins = res.stdout.split()
+        return logins[-1] if logins else None
+
+    def permission(self, login: str) -> str:
+        """The account's permission on the repo: admin, maintain, write, triage, read or none."""
+        res = run(["gh", "api", f"repos/{self.repo}/collaborators/{login}/permission",
+                   "--jq", ".permission"], check=False)
+        return res.stdout.strip() if res.ok else "none"
+
     def open_issue_titles(self) -> dict[int, str]:
         """Open issues' numbers and titles only: cheap enough to fetch for every agent run."""
         data = self._gh_json("issue", "list", "--state", "open", "--limit", "500",

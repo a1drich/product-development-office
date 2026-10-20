@@ -130,3 +130,18 @@ def test_every_agent_task_kind_has_a_role():
     for kind in ["triage", "resolve_blocker", "practices", "design", "implement", "review", "test"]:
         assert Task(kind, 1).role in {"pm", "designer", "engineer", "reviewer", "tester"}
     assert set(ROLE_BY_KIND) >= {"practices"}
+
+
+def test_a_release_issue_waits_for_approval_then_deploys_checks_and_rolls_back():
+    pending = issue(1, L.RELEASE, L.BLOCKED)
+    assert kind(pending) is None
+    assert kind(issue(1, L.RELEASE, L.BLOCKED, L.RELEASE_APPROVED)) == "deploy"
+    live = [comment("Released.\n<!-- office:deployed abc1234 -->")]
+    assert kind(issue(1, L.RELEASE, L.TESTING, comments=live)) == "live_check"
+    # A failed live check waits for the owner: roll back, or close to keep it.
+    assert kind(issue(1, L.RELEASE, L.BLOCKED, comments=live)) is None
+    assert kind(issue(1, L.RELEASE, L.BLOCKED, L.ROLLBACK_APPROVED, comments=live)) == "rollback"
+    # Approving the release again on a live one does nothing; rolled back, it's pending again.
+    assert kind(issue(1, L.RELEASE, L.RELEASE_APPROVED, comments=live)) is None
+    back = [*live, comment("Rolled back.\n<!-- office:rolled-back 0000aaa -->")]
+    assert kind(issue(1, L.RELEASE, L.BLOCKED, L.RELEASE_APPROVED, comments=back)) == "deploy"

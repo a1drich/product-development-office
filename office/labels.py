@@ -20,6 +20,11 @@ BLOCKER = "office:blocker"
 STATUS_ISSUE = "office:status"
 PRACTICE = "office:practice"
 WAITING = "office:waiting"
+RELEASE = "office:release"
+# Only the owner sets these. The `gh` wrapper refuses to let an agent add them.
+RELEASE_APPROVED = "release:approved"
+ROLLBACK_APPROVED = "rollback:approved"
+APPROVALS = {RELEASE_APPROVED, ROLLBACK_APPROVED}
 
 STATUSES = [TRIAGE, DESIGN, READY, IN_PROGRESS, IN_REVIEW, TESTING, DONE]
 
@@ -44,5 +49,8 @@ LABELS = [
     Label(STATUS_ISSUE, "BFDADC", "The office's running status summary"),
     Label(WAITING, "EDEDED", "Waiting for other issues to close; requeued automatically"),
     Label(PRACTICE, "C2E0C6", "A suggested improvement to how the repo is built or maintained"),
+    Label(RELEASE, "0052CC", "The next release: merged changes that aren't live yet"),
+    Label(RELEASE_APPROVED, "006B75", "The owner's go-ahead to release this release issue"),
+    Label(ROLLBACK_APPROVED, "D93F0B", "The owner's go-ahead to roll this release back"),
     *(Label(f"priority:p{p}", "FBCA04", f"Priority {p}") for p in range(4)),
 ]

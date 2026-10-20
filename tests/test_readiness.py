@@ -1,5 +1,15 @@
 from office import labels as L
-from office.readiness import FAIL, PASS, WARN, check_files, check_github, verify_command, worst
+from office.readiness import (
+    FAIL,
+    PASS,
+    WARN,
+    check_files,
+    check_github,
+    release_command,
+    rollback_command,
+    verify_command,
+    worst,
+)
 
 
 def levels(root):
@@ -17,7 +27,8 @@ def test_empty_repo_fails(tmp_path):
 def test_ready_repo_passes(tmp_path):
     (tmp_path / "AGENTS.md").write_text("# brief")
     (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\n@AGENTS.md\n")
-    (tmp_path / "Makefile").write_text("lint:\n\techo\n\nverify: lint\n\nscreenshots:\n\techo\n")
+    (tmp_path / "Makefile").write_text("lint:\n\techo\n\nverify: lint\n\nscreenshots:\n\techo\n"
+                                          "\nrelease:\n\techo\n")
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "decisions.md").write_text("x")
     (tmp_path / "PRODUCT.md").write_text("x")
@@ -50,6 +61,17 @@ def test_verify_command_detection(tmp_path):
     assert verify_command(tmp_path) == "npm run verify"
     (tmp_path / "Makefile").write_text("verify: lint test\n")
     assert verify_command(tmp_path) == "make verify"
+
+
+def test_release_commands_are_optional_and_take_the_commit_to_go_back_to(tmp_path):
+    assert release_command(tmp_path) is None and rollback_command(tmp_path) is None
+    assert levels(tmp_path)["release"] == WARN
+    (tmp_path / "package.json").write_text('{"scripts": {"release": "x", "rollback": "y"}}')
+    assert release_command(tmp_path) == "npm run release"
+    assert rollback_command(tmp_path, "abc1234") == ["npm", "run", "rollback", "--", "abc1234"]
+    (tmp_path / "Makefile").write_text("release:\n\techo\nrollback:\n\techo\n")
+    assert rollback_command(tmp_path, "abc1234") == ["make", "rollback", "REF=abc1234"]
+    assert rollback_command(tmp_path) == ["make", "rollback"]
 
 
 def test_github_checks():

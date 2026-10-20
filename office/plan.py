@@ -23,6 +23,9 @@ NEXT = {
     "release": "its stale claim is released",
     "close_done": "it is closed",
     "unwait": "it is requeued (dependencies closed)",
+    "deploy": "the office releases it (you approved)",
+    "rollback": "the office rolls it back (you approved)",
+    "live_check": "Codex checks the live site",
 }
 
 
@@ -53,6 +56,10 @@ def describe(issues: list[Issue], now: datetime, claim_ttl: timedelta) -> list[R
             claimed = planner.last_claim(issue)
             age = f" ({int((now - claimed).total_seconds() // 60)} min)" if claimed else ""
             nxt, rank = f"an engineer is working on it{age}", 1
+        elif L.RELEASE in issue.labels:
+            nxt = (f"live check failed: add `{L.ROLLBACK_APPROVED}`, or close it to keep it"
+                   if planner.deployed(issue) else f"waits for you to add `{L.RELEASE_APPROVED}`")
+            rank = 2
         elif issue.is_blocker:
             nxt, rank = "waits for your answer", 2
         elif L.PRACTICE in issue.labels and issue.blocked:

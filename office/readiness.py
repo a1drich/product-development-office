@@ -42,18 +42,37 @@ def impeccable_installed(root: Path) -> str | None:
     return _exists(root, *IMPECCABLE_DIRS)
 
 
-def verify_command(root: Path) -> str | None:
+def repo_command(root: Path, name: str) -> str | None:
+    """`make <name>` or `npm run <name>`, whichever the repo defines."""
     makefile = root / "Makefile"
-    if makefile.exists() and re.search(r"^verify\s*:", makefile.read_text(), re.M):
-        return "make verify"
+    if makefile.exists() and re.search(rf"^{name}\s*:", makefile.read_text(), re.M):
+        return f"make {name}"
     pkg = root / "package.json"
     if pkg.exists():
         try:
-            if "verify" in json.loads(pkg.read_text()).get("scripts", {}):
-                return "npm run verify"
+            if name in json.loads(pkg.read_text()).get("scripts", {}):
+                return f"npm run {name}"
         except json.JSONDecodeError:
             pass
     return None
+
+
+def verify_command(root: Path) -> str | None:
+    return repo_command(root, "verify")
+
+
+def release_command(root: Path) -> str | None:
+    return repo_command(root, "release")
+
+
+def rollback_command(root: Path, ref: str | None = None) -> list[str] | None:
+    """The rollback command, given the commit to go back to when there is one."""
+    cmd = repo_command(root, "rollback")
+    if cmd is None:
+        return None
+    if ref is None:
+        return cmd.split()
+    return [*cmd.split(), f"REF={ref}"] if cmd.startswith("make") else [*cmd.split(), "--", ref]
 
 
 def check_files(root: Path) -> list[Finding]:
@@ -92,6 +111,19 @@ def check_files(root: Path) -> list[Finding]:
             "verify", FAIL, "no single verify command",
             "Add `make verify` (or `npm run verify`) that runs lint, tests, typecheck and frontend "
             "lint and exits non-zero on any failure. It is the definition of done.",
+        ))
+
+    release = release_command(root)
+    if release:
+        rollback = repo_command(root, "rollback")
+        out.append(Finding("release", PASS, f"release command: `{release}`"
+                           + (f", rollback: `{rollback}`" if rollback else "")))
+    else:
+        out.append(Finding(
+            "release", WARN, "no release command",
+            "Add `make release` (or `npm run release`) that puts the checked-out commit live, "
+            "and `make rollback REF=<commit>` that puts an earlier commit back. The office then "
+            "prepares each release for your approval and runs it once you approve.",
         ))
 
     docs = root / "docs"

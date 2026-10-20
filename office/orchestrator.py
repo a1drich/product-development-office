@@ -9,8 +9,11 @@ import shutil
 import signal
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from office import databases, ghshim, planner, ports, readiness, shell, stacks
 from office import labels as L
@@ -27,7 +30,10 @@ log = logging.getLogger("office")
 MAX_FAILURES = 3
 CI_WAIT_SECONDS = 30 * 60
 STATUS_TITLE = "Office status"
+RELEASE_TITLE = "Release"
+MANUAL_DIR = "docs/manual/"
 SCREENSHOT_DIR = "docs/manual/screenshots/"
+CHANGE_LINE = re.compile(r"^- #\d+ .*$", re.M)
 
 
 def mark(name: str) -> str:
@@ -89,6 +95,31 @@ def blocker_body(blocker: dict, blocks: list[int]) -> str:
     )
 
 
+def release_changes(body: str) -> list[str]:
+    """The change lines of a release issue's body."""
+    return CHANGE_LINE.findall(body)
+
+
+def release_body(changes: list[str], head: str, verify: str, release: str,
+                 rollback: str | None) -> str:
+    undo = (f"If the live check fails, add `{L.ROLLBACK_APPROVED}` and the office runs "
+            f"`{rollback}` to put the previous release back."
+            if rollback else
+            "This repo has no rollback command, so if the live check fails you roll back by hand.")
+    return (
+        "Merged into the default branch, and not live yet. Each change was reviewed, tested "
+        "and passed CI before it merged.\n\n"
+        "## Changes\n" + "\n".join(changes) + "\n\n"
+        "## To release\n"
+        f"Add the `{L.RELEASE_APPROVED}` label. The office checks the default branch is still "
+        f"at `{head[:7]}`, runs `{verify}` on it, then runs `{release}`. Codex then checks the "
+        f"live site and reports here. {undo}\n\n"
+        "Changes merged before you approve are added to this list, so there is only ever one "
+        "release to approve.\n"
+        f"{mark('release')}\n<!-- office:head {head} -->"
+    )
+
+
 class Office:
     def __init__(self, cfg: Config, gh: GitHub, ws: Workspace, dry_run: bool = False):
         self.cfg = cfg
@@ -112,6 +143,8 @@ class Office:
         self.real_gh = shutil.which("gh")
         self.leases = ports.Leases(ws.leases, cfg.agent_ports, cfg.ports_per_agent,
                                    cfg.reserved_ports, cfg.fixed_ports)
+        # Merges finish on several threads; one at a time updates the release issue.
+        self.release_lock = threading.Lock()
 
     # --- loop -------------------------------------------------------------------
 
@@ -139,7 +172,8 @@ class Office:
         if self.dry_run:
             self.log_overview(issues, now)
             for t in tasks:
-                log.info("would run %s on #%s (%s)", t.kind, t.issue, t.role or "housekeeping")
+                log.info("would run %s on #%s (%s)", t.kind, t.issue,
+                         t.role or ("office" if t.kind in planner.OFFICE_RUN else "housekeeping"))
             return tasks
         for task in tasks:
             self.start(task)
@@ -316,8 +350,8 @@ class Office:
         if task.kind in planner.HOUSEKEEPING:
             self.safely(task, self.housekeeping)
             return
-        self.running[task.issue] = task.role
-        log.info("starting %s on #%s (%s)", task.kind, task.issue, task.role)
+        self.running[task.issue] = task.role or "office"
+        log.info("starting %s on #%s (%s)", task.kind, task.issue, self.running[task.issue])
         self.futures[self.pool.submit(self.safely, task, self.execute)] = task
 
     def reap(self) -> None:
@@ -354,7 +388,8 @@ class Office:
 
     def post_summary(self, issues: list[Issue]) -> None:
         waiting = sorted((i for i in issues if i.blocked),
-                         key=lambda i: (not i.is_blocker, L.PRACTICE in i.labels,
+                         key=lambda i: (L.RELEASE not in i.labels, not i.is_blocker,
+                                        L.PRACTICE in i.labels,
                                         planner.priority(i), i.number))
         lines = [f"- #{i.number} {i.title}" for i in waiting]
         summary = "\n".join(lines) or "- (none)"
@@ -398,30 +433,42 @@ class Office:
             **extra,
         }
 
-    def in_worktree(self, role: str, issue: Issue, prompt: str) -> AgentResult:
-        """Runs an agent in the issue's own worktree, on its own leased block of ports.
+    @contextmanager
+    def leased(self, role: str, number: int) -> Iterator[tuple[Path, dict[str, str], range | None]]:
+        """The issue's own worktree, its environment and its leased block of ports.
         Afterwards, even if the run failed, the office stops anything still listening on
-        those ports, releases them, and drops every database the agent created under the
-        issue's prefix."""
-        path = self.ws.worktree(issue.number)
-        prefix = databases.prefix_for(self.gh.repo, issue.number)
-        block = self.leases.lease(issue.number)
-        env = {**self.agent_env(role, issue.number), "OFFICE_DB_PREFIX": prefix}
+        those ports, releases them, and drops every database created under the issue's
+        prefix."""
+        path = self.ws.worktree(number)
+        prefix = databases.prefix_for(self.gh.repo, number)
+        block = self.leases.lease(number)
+        env = {**self.agent_env(role, number), "OFFICE_DB_PREFIX": prefix}
         if block:
             env["OFFICE_PORTS"] = ports.label(block)
             env["OFFICE_PORT_BASE"] = str(block.start)
-            log.info("#%s: leased ports %s to the %s", issue.number, ports.label(block), role)
-        prompt = prompt.replace("{{ports}}", ports_text(block))
+            log.info("#%s: leased ports %s to the %s", number, ports.label(block), role)
         try:
-            return run_agent(role, prompt, path, self.cfg, exclusive=True, env=env)
+            yield path, env, block
         finally:
-            held = self.leases.release(issue.number)
+            held = self.leases.release(number)
             if ports.stop_listeners(held):
-                log.info("#%s: stopped servers the %s left on its ports", issue.number, role)
+                log.info("#%s: stopped servers the %s left on its ports", number, role)
             dropped = self.dbs.drop(prefix)
             if dropped:
-                log.info("#%s: dropped the %s's databases: %s", issue.number, role,
+                log.info("#%s: dropped the %s's databases: %s", number, role,
                          ", ".join(dropped))
+
+    def in_worktree(self, role: str, issue: Issue, prompt: str) -> AgentResult:
+        """Runs an agent in the issue's own worktree, on its own leased block of ports."""
+        with self.leased(role, issue.number) as (path, env, block):
+            prompt = prompt.replace("{{ports}}", ports_text(block))
+            return run_agent(role, prompt, path, self.cfg, exclusive=True, env=env)
+
+    def command(self, args: list[str], cwd: Path, env: dict[str, str]) -> shell.Result:
+        """One of the target's own commands (verify, release, rollback), run by the office."""
+        log.info("running `%s`", " ".join(args))
+        return shell.run(args, cwd=cwd, check=False, env=shell.clean_env(env),
+                         timeout=self.cfg.agent_timeout_minutes * 60)
 
     def in_clone(self, role: str, prompt: str, issue: int) -> AgentResult:
         self.ws.update_default_branch()
@@ -559,7 +606,8 @@ class Office:
         if self.gh.pr_conflicts(pr):
             self.send_back_conflicting(issue, pr)
             return
-        screens = self.screens_markdown(pr)
+        sha, files = self.gh.pr_files(pr)
+        screens = self.screens_markdown(sha, files)
         if screens:
             self.gh.pr_comment(pr, f"## Screens in this change\n\n{screens}\n{mark('screens')}")
         try:
@@ -584,16 +632,190 @@ class Office:
         fresh = self.gh.issue(issue.number)
         if fresh.state == "OPEN":
             self.gh.close_issue(issue.number)
+        try:
+            self.note_release(issue, pr, files)
+        except Exception:  # the merge stands; the next merge brings the list up to date
+            log.exception("#%s: could not update the release issue", issue.number)
 
-    def screens_markdown(self, pr: int) -> str:
+    def screens_markdown(self, sha: str, files: list[str]) -> str:
         """Image grid of the manual screenshots a PR adds or changes."""
-        sha, files = self.gh.pr_files(pr)
         shots = sorted(f for f in files if f.startswith(SCREENSHOT_DIR) and f.endswith(".png"))
         if not shots:
             return ""
         base = f"https://github.com/{self.gh.repo}/blob/{sha}"
         return "\n".join(f"**{f.rsplit('/', 1)[-1]}**\n\n![{f}]({base}/{f}?raw=true)\n"
                          for f in shots)
+
+    # --- releases ---------------------------------------------------------------
+
+    def note_release(self, issue: Issue, pr: int, files: list[str]) -> None:
+        """Adds a merged change to the release issue that waits for the owner's approval.
+        A change users can see (it updates the manual) opens one if none is open; others
+        are listed only when one is already open, and go out with the next release anyway."""
+        release = readiness.release_command(self.ws.clone)
+        if not release:
+            return
+        line = f"- #{issue.number} {issue.title} (PR #{pr})"
+        visible = any(f.startswith(MANUAL_DIR) for f in files)
+        with self.release_lock:
+            pending = [i for i in self.gh.labelled_issues(L.RELEASE) if not planner.deployed(i)]
+            if not pending and not visible:
+                return
+            # Another merge may have landed since this one; the head must cover them all.
+            self.ws.update_default_branch()
+            body = release_body(
+                (release_changes(pending[0].body) if pending else []) + [line], self.ws.head(),
+                readiness.verify_command(self.ws.clone) or "nothing (no verify command)",
+                release, readiness.repo_command(self.ws.clone, "rollback"))
+            if pending:
+                self.gh.edit_body(pending[0].number, body)
+                log.info("#%s added to release #%s", issue.number, pending[0].number)
+            else:
+                n = self.gh.create_issue(RELEASE_TITLE, body, [L.RELEASE, L.BLOCKED])
+                log.info("#%s opened release #%s for your approval", issue.number, n)
+
+    def approved(self, issue: Issue, label: str) -> bool:
+        """True when a repo admin added the approval label. Anyone else's is removed."""
+        login = self.gh.label_added_by(issue.number, label)
+        if login and self.gh.permission(login) == "admin":
+            return True
+        self.gh.edit_labels(issue.number, remove=[label])
+        who = f"@{login}" if login else "an unknown account"
+        self.gh.comment(issue.number, f"`{label}` was added by {who}, which isn't a repo admin, "
+                                      f"so the office removed it.\n{mark('not-approved')}")
+        log.warning("#%s: ignored %s from %s", issue.number, label, who)
+        return False
+
+    def refuse(self, issue: Issue, label: str, why: str) -> None:
+        """Takes the approval back off, saying why. The issue stays waiting for the owner."""
+        self.gh.edit_labels(issue.number, remove=[label])
+        self.gh.comment(issue.number, f"{why}\n\nAdd `{label}` again to retry.\n"
+                                      f"{mark('not-released')}")
+        log.warning("#%s: %s", issue.number, why.splitlines()[0])
+
+    def run_in_release_tree(self, issue: Issue, at: str, commands: list[list[str]]
+                            ) -> tuple[shell.Result, list[str]] | None:
+        """Runs the commands in order in a fresh worktree at commit `at`, stopping at the
+        first failure. Returns the last result and its command, or None when the office is
+        stopping."""
+        self.ws.remove_worktree(issue.number)
+        try:
+            with self.leased("office", issue.number) as (path, env, _):
+                # The worktree fetches again, so pin it to the commit that was approved.
+                self.ws.git("reset", "-q", "--hard", at, cwd=path)
+                for args in commands:
+                    res = self.command(args, path, env)
+                    if self.stopping.is_set():
+                        return None  # the label stays, so the next start runs it again
+                    if not res.ok:
+                        break
+        finally:
+            self.ws.remove_worktree(issue.number)
+        return res, args
+
+    def do_deploy(self, issue: Issue, task: Task) -> None:
+        if not self.approved(issue, L.RELEASE_APPROVED):
+            return
+        self.ws.update_default_branch()
+        release = readiness.release_command(self.ws.clone)
+        head = self.ws.head()
+        if not release:
+            self.refuse(issue, L.RELEASE_APPROVED,
+                        "The repo no longer has a release command, so nothing was released.")
+            return
+        if planner.release_head(issue) != head:
+            self.refuse(issue, L.RELEASE_APPROVED,
+                        f"The default branch moved to `{head[:7]}` after this list was written, "
+                        "so it may not be what you approved. Nothing was released; check the "
+                        "list again.")
+            return
+        verify = readiness.verify_command(self.ws.clone)
+        commands = ([verify.split()] if verify else []) + [release.split()]
+        ran = self.run_in_release_tree(issue, head, commands)
+        if ran is None:
+            return
+        res, args = ran
+        out = f"```\n{(res.stdout + res.stderr).strip()[-1500:]}\n```"
+        if not res.ok and args != commands[-1]:
+            self.refuse(issue, L.RELEASE_APPROVED,
+                        f"`{' '.join(args)}` failed on the default branch, so nothing was "
+                        f"released.\n\n{out}")
+            return
+        if not res.ok:
+            self.refuse(issue, L.RELEASE_APPROVED,
+                        f"`{release}` failed. Check what's live before retrying: the command "
+                        f"may have stopped partway.\n\n{out}")
+            return
+        self.gh.edit_labels(issue.number, remove=[L.RELEASE_APPROVED, L.BLOCKED])
+        self.gh.set_status(issue, L.TESTING)
+        self.gh.comment(issue.number, f"Released `{head[:7]}` with `{release}`. Codex checks the "
+                                      f"live site next.\n\n{out}\n<!-- office:deployed {head} -->")
+        log.info("#%s released %s", issue.number, head[:7])
+
+    def previous_release(self) -> str | None:
+        """The commit the last closed release went live at."""
+        for i in self.gh.labelled_issues(L.RELEASE, state="closed"):
+            sha = planner.deployed(i)
+            if sha:
+                return sha
+        return None
+
+    def do_rollback(self, issue: Issue, task: Task) -> None:
+        if not self.approved(issue, L.ROLLBACK_APPROVED):
+            return
+        previous = self.previous_release()
+        cmd = readiness.rollback_command(self.ws.clone, previous)
+        if cmd is None or previous is None:
+            why = ("The repo has no rollback command" if cmd is None else
+                   "There is no earlier release the office ran to go back to")
+            self.refuse(issue, L.ROLLBACK_APPROVED,
+                        f"{why}, so nothing was rolled back. Roll back by hand, then close this "
+                        "issue.")
+            return
+        self.ws.update_default_branch()
+        ran = self.run_in_release_tree(issue, self.ws.head(), [cmd])
+        if ran is None:
+            return
+        res, _ = ran
+        out = f"```\n{(res.stdout + res.stderr).strip()[-1500:]}\n```"
+        if not res.ok:
+            self.refuse(issue, L.ROLLBACK_APPROVED,
+                        f"`{' '.join(cmd)}` failed. Check what's live before retrying: the "
+                        f"command may have stopped partway.\n\n{out}")
+            return
+        self.gh.edit_labels(issue.number, add=[L.BLOCKED], remove=[L.ROLLBACK_APPROVED, L.TESTING])
+        self.gh.comment(
+            issue.number,
+            f"Rolled back with `{' '.join(cmd)}`. The changes listed above are still on the "
+            "default branch, and not live. Once the problem is fixed and merged, approve this "
+            f"release again.\n\n{out}\n<!-- office:rolled-back {previous} -->")
+        log.info("#%s rolled back", issue.number)
+
+    def do_live_check(self, issue: Issue, task: Task) -> None:
+        sha = planner.deployed(issue) or ""
+        self.ws.remove_worktree(issue.number)  # a fresh checkout of the released branch
+        try:
+            prompt = render("tester_live", self.values(issue, sha=sha[:7]))
+            result = self.in_worktree("tester", issue, prompt)
+        finally:
+            self.ws.remove_worktree(issue.number)
+        verdict = self.accept(issue, task, result, {"pass", "fail"})
+        if not verdict:
+            return
+        if verdict.outcome == "pass":
+            self.gh.set_status(issue, L.DONE)
+            self.gh.close_issue(issue.number, f"Live and checked: {verdict.summary}\n"
+                                              f"{mark('released')}")
+            log.info("#%s is live and checked", issue.number)
+            return
+        undo = (f"To put the previous release back, add `{L.ROLLBACK_APPROVED}`."
+                if readiness.repo_command(self.ws.clone, "rollback") else
+                "The repo has no rollback command, so roll back by hand if needed.")
+        self.gh.edit_labels(issue.number, add=[L.BLOCKED], remove=[L.TESTING])
+        self.gh.comment(issue.number,
+                        f"The live check found problems: {verdict.summary}\n\n{undo} To keep this "
+                        f"release live, close this issue.\n{mark('live-failed')}")
+        log.warning("#%s: the live check failed", issue.number)
 
     def do_resolve_blocker(self, issue: Issue, task: Task) -> None:
         result = self.in_clone("pm", render("pm_blocker", self.values(issue)), issue.number)

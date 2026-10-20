@@ -18,6 +18,7 @@ uv run office start owner/name --dry-run # print the plan, change nothing
 uv run office docs serve owner/name      # browse a target's docs site
 uv run office plan owner/name            # what happens next (read-only)
 uv run office stop owner/name [--now]    # drain (or stop immediately) a running office
+uv run office release owner/name         # approve the open release (the office runs it)
 uv run playwright install chromium       # once, for office shoot and its tests
 ```
 
@@ -52,9 +53,9 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
   - API keys are never used. The orchestrator unsets `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in each agent's environment and refuses to start if a CLI reports API-key auth.
   - When a role hits its usage limit, that role pauses. It never falls back to API billing.
 - **Code is written by one model and checked by another.** Claude writes the code; Codex reviews and tests it.
-- **Merging and deploying are treated differently.**
+- **Merging and releasing are treated differently.**
   - The Tester merges a PR only after the target repo's full verification gate passes locally and the acceptance criteria are verified. CI must also pass if the repo has it.
-  - Deploying and releasing are always a human decision. A merge never triggers either.
+  - Deploying and releasing are always a human decision. A merge never triggers either. The office collects merged changes in one `office:release` issue, and releases only when a repo admin adds `release:approved`: it checks the default branch hasn't moved, runs verify, then the target's `make release`, and Codex checks the live site. It rolls back only on `rollback:approved`. Agents never release, and can't set either label.
 - **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks, and is labelled `office:blocker` plus `blocked:human`. Three failures in a row on one issue also file a blocker.
 - **Startup has a fixed sequence:**
   1. Ask for the target repo (`owner/name`), or read it from a CLI argument or saved config.

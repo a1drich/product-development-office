@@ -1,6 +1,6 @@
 # How it works
 
-The office in three pictures: the agent loop that drives everything, the path one feature takes from your request to your review, and where each piece of information lives. Details are in [Workflow](WORKFLOW.md), [Testing](TESTING.md) and [Docs site and user manual](DOCS-SITE.md).
+The office in three pictures: the agent loop that drives everything, the path one feature takes from your request to your review and release, and where each piece of information lives. Details are in [Workflow](WORKFLOW.md), [Testing](TESTING.md) and [Docs site and user manual](DOCS-SITE.md).
 
 ## 1. The agent loop
 
@@ -26,7 +26,7 @@ What keeps it running unattended:
 - **Sequencing isn't your problem.** An issue that needs another to land first waits, and is requeued when that issue closes.
 - **Failures are contained.** A step that fails three times becomes a blocker, a role that hits its usage limit pauses while the others continue, and anything an agent leaves running is stopped.
 
-## 2. One feature, from request to review
+## 2. One feature, from request to release
 
 You describe an outcome in a GitHub issue. Everything after that, including the documentation you review it through, is produced by the office.
 
@@ -40,6 +40,11 @@ flowchart LR
     TS --> MG[Office: merge<br/>after CI]
     MG --> SITE[MkDocs site refreshes<br/>with the new manual<br/>and screenshots]
     SITE --> R([You review the<br/>manual and screens])
+    MG --> REL[Office: Release issue<br/>lists what isn't live yet]
+    REL --> AP([You add<br/>release:approved])
+    AP --> DEP[Office: verify,<br/>then the repo's<br/>release command]
+    DEP --> LIVE[Codex: check<br/>the live site]
+    LIVE -. fail: you approve<br/>a rollback .-> DEP
     RV -. changes .-> EN
     TS -. fail .-> EN
 ```
@@ -53,6 +58,7 @@ The documentation is part of the work, not an afterthought:
 | **Build** | The PR updates `docs/manual/README.md`, adds the pages to `docs/manual/pages.json`, and passes `mkdocs build --strict`. |
 | **Test** | [Playwright](https://playwright.dev/) captures every manual page at desktop and phone widths, checks for broken pages and layout problems, and commits the screenshots. A missing or wrong manual entry fails the PR. |
 | **Merge** | The changed screens are posted on the PR and the "Office status" issue, and the live site at `http://127.0.0.1:8787` updates. |
+| **Release** | After you approve a release, Codex checks the live site with the same pages from `docs/manual/pages.json`. |
 | **Practices review** | Daily, the PM flags features with no manual section, stale screenshots, and docs that no longer match the code. |
 
 ## 3. Where things live

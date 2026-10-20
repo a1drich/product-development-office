@@ -15,8 +15,8 @@ Exactly one status label per issue says where it is in the flow. The office move
 | `status:ready` | `#0E8A16` | Fully specified; an engineer can pick it up | The office, after a PM or Designer `ready` verdict, a review asking for changes, a failed test, a merge conflict, a failed CI check, or a released claim | An engineer builds it |
 | `status:in-progress` | `#FBCA04` | An engineer is working on it | The office, when an engineer starts; it also assigns the issue and posts a claim comment | The engineer's verdict moves it on. At startup, or after `claim_ttl_minutes` with no agent running, the claim is released back to `status:ready`. |
 | `status:in-review` | `#1D76DB` | PR open, waiting for Codex review | The office, after an engineer's `opened` verdict | Codex reviews the PR |
-| `status:testing` | `#5319E7` | PR approved, waiting for Codex testing | The office, after the reviewer's `approve` verdict | Codex tests it, then the office merges it after CI |
-| `status:done` | `#0E8A16` | Verified locally and merged | The office, after merging | The office closes the issue if the merge didn't |
+| `status:testing` | `#5319E7` | PR approved, waiting for Codex testing | The office, after the reviewer's `approve` verdict, and on a release issue once the release has run | Codex tests it, then the office merges it after CI. On a release issue, Codex checks the live site. |
+| `status:done` | `#0E8A16` | Verified locally and merged | The office, after merging, and on a release issue once its live check passes | The office closes the issue if the merge didn't |
 
 An open issue with **no status label** is treated as `status:triage`, so issues you open are picked up without labelling them.
 
@@ -28,6 +28,16 @@ An open issue with **no status label** is treated as `status:triage`, so issues 
 | `office:blocker` | `#B60205` | A decision issue the office filed, written to be answered in under a minute | The office, on each blocker it files | The office closes the blocker once the PM has applied your answer. If the answer is incomplete, the office puts `blocked:human` back and comments with what's still needed. |
 
 To answer a blocker, comment with your decision on the `office:blocker` issue, then remove its `blocked:human` label. See [Blockers](WORKFLOW.md#blockers).
+
+## Releases
+
+Only repos with a release command get these. See [Releases](WORKFLOW.md#releases).
+
+| Label | Color | Meaning | Set by | Removed by |
+|---|---|---|---|---|
+| `office:release` | `#0052CC` | The "Release" issue: changes merged into the default branch and not live yet | The office, on the release issue it opens after a user-visible merge. It also has `blocked:human` while it waits for you, and `status:testing` while Codex checks the live site. | Stays on the issue. The office closes it once the live check passes; you close it to keep a release whose live check failed. |
+| `release:approved` | `#006B75` | Your go-ahead to release the listed changes | **You** (a repo admin), on GitHub or with `office release owner/name`. Agents can't set it. | The office, once it has released, or if it refuses: the default branch moved, verify or the release command failed, or the label wasn't added by a repo admin |
+| `rollback:approved` | `#D93F0B` | Your go-ahead to put the previous release back after a failed live check | **You** (a repo admin), on GitHub or with `office release owner/name --rollback`. Agents can't set it. | The office, once it has rolled back, or if the rollback command failed or is missing |
 
 ## Office bookkeeping
 

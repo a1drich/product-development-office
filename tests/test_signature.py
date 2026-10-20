@@ -76,3 +76,14 @@ def test_the_installed_wrapper_signs_and_runs_the_real_gh(tmp_path):
                          env={**env, "OFFICE_AGENT_ROLE": ""}, capture_output=True,
                          text=True, check=True).stdout
     assert "'--body', 'hi'" in out and "🤖" not in out
+
+
+def test_agents_cannot_give_the_owners_approval_labels(monkeypatch, capsys):
+    assert ghshim.approval_in(["issue", "edit", "4", "--add-label", "release:approved"])
+    assert ghshim.approval_in(["api", "repos/o/r/issues/4/labels",
+                               "-f", "labels[]=rollback:approved"])
+    assert ghshim.approval_in(["issue", "comment", "4", "--body", "add release:approved"]) is None
+    monkeypatch.setenv("OFFICE_AGENT_ROLE", "tester")
+    monkeypatch.setenv("OFFICE_REAL_GH", "/bin/false-gh-never-run")
+    assert ghshim.main(["issue", "edit", "4", "--add-label", "release:approved"]) == 1
+    assert "owner's approval" in capsys.readouterr().err

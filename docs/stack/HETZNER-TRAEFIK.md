@@ -119,12 +119,12 @@ tag v*.*.*   ──► deploy.yml: full CI ──► ssh deploy@server "deploy v
 - **The server builds the images.** No container registry is needed.
 - **The GitHub Actions SSH key is locked to one script.** Its entry in `~deploy/.ssh/authorized_keys` uses `command="/opt/<app>/deploy/deploy.sh",restrict`, so the key can only run that script. It accepts only tags reachable from `main`.
 - **Secrets:** `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` are GitHub Actions secrets, and `DEPLOY_HOST` (`deploy@<ip>`) is an Actions variable.
-- **Make targets:** `make release` tags `origin/main` and follows the Actions run. `make rollback V=v1.3.2` redeploys an older tag without rebuilding. `make deploy-status` shows what's running.
+- **Make targets:** `make release` tags the checked-out commit (a commit on `main`) and follows the Actions run. `make rollback REF=<commit>` redeploys the release tag on that commit (`git tag --points-at <commit>`) without rebuilding. `make deploy-status` shows what's running. With `release` and `rollback`, the office runs releases once the owner approves them (see [Releases](../WORKFLOW.md#releases)).
 - **Rolling back across a schema change** needs care: see the [Django](DJANGO.md#deploying) guide.
 
 ## Agent guidance
 
-- Never deploy, release, tag a release, roll back or change production settings, secrets or DNS. Those are always a human decision; file a blocker instead.
+- Never deploy, release, tag a release, roll back or change production settings, secrets or DNS, and never run `make release` or `make rollback`. Releases go out only once the owner approves them; anything else production needs is a blocker.
 - Changes to `deploy/` (compose files, Traefik labels, deploy scripts) go through a normal PR, and the PR says what the owner must do on the server to apply them.
 - Keep Postgres and Redis on the internal network only. Never add Traefik labels or published ports to them.
 

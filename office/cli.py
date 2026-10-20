@@ -1,4 +1,4 @@
-"""`office` command line: check, labels, start."""
+"""`office` command line: check, labels, start, release and the rest."""
 
 from __future__ import annotations
 
@@ -182,6 +182,40 @@ def cmd_plan(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_release(args: argparse.Namespace, cfg: Config) -> int:
+    """Approves the open release (or, with --rollback, its rollback) by adding the
+    approval label as you. The running office does the rest, as if you added it on GitHub."""
+    from office import planner
+
+    repo = args.repo or cfg.repo
+    if not repo or not REPO_RE.match(repo):
+        sys.exit("which repo? `office release owner/name`")
+    gh = GitHub(repo)
+    releases = gh.labelled_issues(L.RELEASE)
+    if args.rollback:
+        todo = [i for i in releases if planner.deployed(i) and i.status != L.TESTING]
+        label, verb = L.ROLLBACK_APPROVED, "roll back"
+    else:
+        todo = [i for i in releases if not planner.deployed(i)]
+        label, verb = L.RELEASE_APPROVED, "release"
+    if not todo:
+        print(f"{repo} has no release waiting to {verb}")
+        return 0
+    issue = todo[0]
+    if label in issue.labels:
+        print(f"#{issue.number} is already approved; the running office picks it up")
+        return 0
+    print(f"#{issue.number} {issue.title}: https://github.com/{repo}/issues/{issue.number}\n")
+    print("\n".join(re.findall(r"^- #\d+ .*$", issue.body, re.M)) or "(no changes listed)")
+    if not args.yes and input(f"\n{verb.capitalize()} this? [y/N] ").strip().lower() != "y":
+        print("nothing changed")
+        return 1
+    gh.edit_labels(issue.number, add=[label])
+    print(f"✓ added `{label}` to #{issue.number}. The office runs it on its next pass "
+          "(start it if it isn't running), and reports on the issue.")
+    return 0
+
+
 def cmd_clean(args: argparse.Namespace, cfg: Config) -> int:
     from office import clean
 
@@ -293,6 +327,14 @@ def main(argv: list[str] | None = None) -> int:
                                     "the office runs)")
     p.add_argument("repo", nargs="?")
     p.set_defaults(fn=cmd_plan)
+
+    p = sub.add_parser("release", help="approve the open release, which the office then runs "
+                                       "and checks live (--rollback to approve rolling it back)")
+    p.add_argument("repo", nargs="?")
+    p.add_argument("--rollback", action="store_true",
+                   help="approve rolling back a release whose live check failed")
+    p.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    p.set_defaults(fn=cmd_release)
 
     p = sub.add_parser("clean", help="remove a project's local state (and, optionally, "
                                      "the office's labels, branches and status issue on GitHub)")

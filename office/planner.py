@@ -12,6 +12,9 @@ from office.gh import Issue
 CLAIM_MARK = "<!-- office:claim -->"
 FAILED_MARK = "<!-- office:failed -->"
 DEPENDS_MARK = re.compile(r"<!-- office:depends ([\d, ]+) -->")
+# A release issue's comments record each deploy and rollback with the commit it was at.
+RELEASE_MARK = re.compile(r"<!-- office:(deployed|rolled-back) ([0-9a-f]{7,40}) -->")
+HEAD_MARK = re.compile(r"<!-- office:head ([0-9a-f]{7,40}) -->")
 
 # Housekeeping kinds need no agent; the orchestrator does them directly.
 HOUSEKEEPING = {"release", "close_done", "unwait"}
@@ -24,7 +27,11 @@ ROLE_BY_KIND = {
     "implement": "engineer",
     "review": "reviewer",
     "test": "tester",
+    "live_check": "tester",
 }
+# Release steps the orchestrator runs itself, off the loop thread: they run the target's
+# verify and release commands, which can take minutes.
+OFFICE_RUN = {"deploy", "rollback"}
 
 
 @dataclass(frozen=True)
@@ -74,11 +81,41 @@ def dependencies(issue: Issue) -> list[int]:
     return []
 
 
+def deployed(issue: Issue) -> str | None:
+    """The commit a release issue is live at: its latest deploy, unless a rollback
+    followed it."""
+    for c in reversed(issue.comments):
+        m = RELEASE_MARK.search(c.body)
+        if m:
+            return m.group(2) if m.group(1) == "deployed" else None
+    return None
+
+
+def release_head(issue: Issue) -> str | None:
+    """The default branch's commit when the release issue's list was last updated."""
+    m = HEAD_MARK.search(issue.body)
+    return m.group(1) if m else None
+
+
+def release_task(issue: Issue) -> Task | None:
+    """A release issue waits for the owner's approval label, then is deployed, checked
+    live, and closed or (on approval) rolled back."""
+    if L.ROLLBACK_APPROVED in issue.labels and deployed(issue):
+        return Task("rollback", issue.number, 0)
+    if deployed(issue):
+        return Task("live_check", issue.number, 0) if issue.status == L.TESTING else None
+    if L.RELEASE_APPROVED in issue.labels:
+        return Task("deploy", issue.number, 0)
+    return None
+
+
 def task_for(
     issue: Issue, now: datetime, claim_ttl: timedelta, open_numbers: set[int] | None = None
 ) -> Task | None:
     if L.STATUS_ISSUE in issue.labels:
         return None
+    if L.RELEASE in issue.labels:
+        return release_task(issue)
     if L.WAITING in issue.labels:
         if open_numbers is not None and not set(dependencies(issue)) & open_numbers:
             return Task("unwait", issue.number, priority(issue))

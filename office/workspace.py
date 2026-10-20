@@ -119,6 +119,10 @@ class Workspace:
         res = self.git("symbolic-ref", "--short", "refs/remotes/origin/HEAD", check=False)
         return res.stdout.strip().removeprefix("origin/") if res.ok else "main"
 
+    def head(self) -> str:
+        """The commit the main clone is at."""
+        return self.git("rev-parse", "HEAD").stdout.strip()
+
     def update_default_branch(self) -> None:
         with self.lock:
             branch = self.default_branch()

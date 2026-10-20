@@ -25,7 +25,8 @@ The office can work on a repo once every box below is ticked. The steps that fol
 - [ ] An MkDocs site with a user manual and feature catalog at `docs/manual/`
 - [ ] Issues are on and the office labels exist
 - [ ] CI runs the same checks as the verify command
-- [ ] Human-only actions (deploys, secrets, money) are written down
+- [ ] Human-only actions (secrets, money, production settings) are written down
+- [ ] Optional: `make release` and `make rollback REF=<commit>`, and the production URL in `AGENTS.md`, so the office can release once you approve
 
 ---
 
@@ -215,7 +216,7 @@ gh repo edit "$REPO" --enable-issues --delete-branch-on-merge
 
 Agents file a blocker whenever they hit one of these, so list them explicitly in `AGENTS.md` or `docs/OWNER-TODO.md`. Typical items:
 
-- deploying or releasing (`make release` and similar)
+- deploying or releasing by hand. With a `make release` command, the office releases only after you approve (see [Releases](WORKFLOW.md#releases)).
 - production settings, secrets, DNS and third-party dashboards
 - anything that costs money or signs a contract
 - legal, privacy and brand copy

@@ -5,7 +5,8 @@ Agents post comments, PRs and issues with `gh` themselves. The office puts this 
 first on their PATH, with `OFFICE_AGENT_ROLE`, `OFFICE_ISSUE` and `OFFICE_REAL_GH` in
 their environment. It adds the role's signature to the body of the commands below and
 runs the real `gh` with everything else unchanged. Edits are left alone, so an issue
-body the PM rewrites doesn't collect a signature on every pass.
+body the PM rewrites doesn't collect a signature on every pass. It refuses any command
+that names a release or rollback approval label: only the owner gives those.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from office.config import ROOT
+from office.labels import APPROVALS
 from office.signature import sign
 
 SIGNED = {("issue", "comment"), ("pr", "comment"), ("pr", "create"), ("pr", "review"),
@@ -63,10 +65,26 @@ def real_gh() -> str:
     return shutil.which("gh", path=path) or "gh"
 
 
+def approval_in(argv: list[str]) -> str | None:
+    """The approval label a command that can change labels names, if any. Comments that
+    merely mention one are fine."""
+    if not (tuple(argv[:2]) in {("issue", "edit"), ("pr", "edit")}
+            or argv[:1] in (["api"], ["label"])):
+        return None
+    for label in sorted(APPROVALS):
+        if any(label in arg for arg in argv):
+            return label
+    return None
+
+
 def main(argv: list[str]) -> int:
     real = os.environ.get("OFFICE_REAL_GH") or real_gh()
     role = os.environ.get("OFFICE_AGENT_ROLE")
     stdin = None
+    if role and approval_in(argv):
+        print(f"`{approval_in(argv)}` is the owner's approval; agents never set it.",
+              file=sys.stderr)
+        return 1
     if role:
         argv, stdin = sign_args(argv, role, os.environ.get("OFFICE_ISSUE"),
                                 lambda p: Path(p).read_text(), sys.stdin.read)

@@ -8,6 +8,7 @@ from office.agents import AgentResult, Verdict
 from office.config import Config
 from office.gh import Comment, Issue
 from office.planner import FAILED_MARK, Task
+from office.shell import Result
 
 
 class FakeGitHub:
@@ -21,6 +22,8 @@ class FakeGitHub:
         self.files = {}
         self.conflicting = set()
         self.pr_comments = []
+        self.label_actors = {}  # (issue, label) -> login; the owner by default
+        self.permissions = {"owner": "admin"}
 
     def open_issues(self):
         return [i for i in self.issues.values() if i.state == "OPEN"]
@@ -80,12 +83,29 @@ class FakeGitHub:
     def edit_body(self, n, body):
         self.issues[n].body = body
 
+    def labelled_issues(self, label, state="open", limit=10):
+        found = [i for i in self.issues.values() if label in i.labels and i.state == state.upper()]
+        return sorted(found, key=lambda i: -i.number)[:limit]
+
+    def label_added_by(self, n, label):
+        return self.label_actors.get((n, label), "owner")
+
+    def permission(self, login):
+        return self.permissions.get(login, "write")
+
 
 class FakeWorkspace:
     def __init__(self, tmp_path):
         self.clone = tmp_path
         self.docs_log = tmp_path / "mkdocs.log"
         self.leases = tmp_path / "leases"
+        self.head_sha = "abc1234"
+
+    def head(self):
+        return self.head_sha
+
+    def git(self, *args, cwd=None, check=True):
+        return Result(0, "", "")
 
     def default_branch(self):
         return "main"
@@ -602,3 +622,133 @@ def test_second_ctrl_c_stops_running_agents_now(make_office, monkeypatch):
     assert elapsed < 15  # the 30s agent was ended
     assert not any(FAILED_MARK in c.body for c in gh.issues[1].comments)  # not a failure
     assert L.IN_PROGRESS in gh.issues[1].labels  # released at the next start
+
+
+# --- releases -------------------------------------------------------------------------
+
+MAKEFILE = "verify:\n\techo\nrelease:\n\techo\nrollback:\n\techo\n"
+
+
+@pytest.fixture
+def releasing(make_office, tmp_path):
+    """An office on a repo with release and rollback commands. Commands it runs are
+    recorded, and fail when their name is in `failing`."""
+    def make(issues, verdicts=(), failing=()):
+        (tmp_path / "Makefile").write_text(MAKEFILE)
+        office, gh = make_office(issues, verdicts)
+        office.ran = []
+
+        def command(args, cwd, env):
+            office.ran.append(" ".join(args))
+            bad = any(name in args for name in failing)
+            return Result(1 if bad else 0, "output", "")
+
+        office.command = command
+        return office, gh
+    return make
+
+
+def release_issue(n=9, *labels, head="abc1234", comments=()):
+    body = orchestrator.release_body(["- #1 Contact form (PR #5)"], head, "make verify",
+                                     "make release", "make rollback")
+    return Issue(n, "Release", body, {L.RELEASE, *labels}, comments=list(comments))
+
+
+def deployed_comment(sha="abc1234"):
+    return Comment("office", f"Released.\n<!-- office:deployed {sha} -->", datetime.now(UTC))
+
+
+def test_a_user_visible_merge_opens_one_release_issue_that_later_merges_join(releasing):
+    office, gh = releasing([Issue(1, "API tweak", "", {L.TESTING}),
+                            Issue(2, "Contact form", "", {L.TESTING}),
+                            Issue(3, "Refactor", "", {L.TESTING})],
+                           [Verdict("pass", "ok")] * 3)
+    for n, pr, files in ((1, 11, ["api/views.py"]), (2, 12, ["docs/manual/README.md"]),
+                         (3, 13, ["src/util.js"])):
+        gh.prs[n] = {"number": pr}
+        gh.files[pr] = files
+        office.execute(Task("test", n))
+        if n == 1:
+            assert gh.labelled_issues(L.RELEASE) == []  # nothing users can see yet
+    [release] = gh.labelled_issues(L.RELEASE)
+    assert {L.RELEASE, L.BLOCKED} <= release.labels
+    assert orchestrator.release_changes(release.body) == [
+        "- #2 Contact form (PR #12)", "- #3 Refactor (PR #13)"]
+    assert "<!-- office:head abc1234 -->" in release.body
+
+
+def test_merges_open_no_release_issue_in_a_repo_without_a_release_command(make_office):
+    office, gh = make_office([Issue(1, "Contact form", "", {L.TESTING})], [Verdict("pass", "ok")])
+    gh.prs[1] = {"number": 5}
+    gh.files[5] = ["docs/manual/README.md"]
+    office.execute(Task("test", 1))
+    assert gh.merged == [5] and gh.labelled_issues(L.RELEASE) == []
+
+
+def test_an_approved_release_is_verified_released_then_checked_live(releasing):
+    office, gh = releasing([release_issue(9, L.BLOCKED, L.RELEASE_APPROVED)])
+    office.execute(Task("deploy", 9))
+    assert office.ran == ["make verify", "make release"]
+    issue = gh.issues[9]
+    assert L.TESTING in issue.labels and not issue.labels & {L.BLOCKED, L.RELEASE_APPROVED}
+    assert "<!-- office:deployed abc1234 -->" in issue.comments[-1].body
+    assert orchestrator.planner.task_for(issue, datetime.now(UTC), orchestrator.timedelta(1)
+                                         ).kind == "live_check"
+
+
+@pytest.mark.parametrize("setup, expected", [
+    (lambda office, gh: setattr(office.ws, "head_sha", "def5678"), "moved"),
+    (lambda office, gh: gh.label_actors.update({(9, L.RELEASE_APPROVED): "bot"}), "isn't a repo"),
+])
+def test_a_release_is_refused_when_main_moved_or_an_admin_did_not_approve(releasing, setup,
+                                                                          expected):
+    office, gh = releasing([release_issue(9, L.BLOCKED, L.RELEASE_APPROVED)])
+    setup(office, gh)
+    office.execute(Task("deploy", 9))
+    assert office.ran == []
+    issue = gh.issues[9]
+    assert L.RELEASE_APPROVED not in issue.labels and L.BLOCKED in issue.labels
+    assert expected in issue.comments[-1].body
+
+
+def test_a_failing_verify_releases_nothing(releasing):
+    office, gh = releasing([release_issue(9, L.BLOCKED, L.RELEASE_APPROVED)], failing=["verify"])
+    office.execute(Task("deploy", 9))
+    assert office.ran == ["make verify"]
+    assert "nothing was released" in gh.issues[9].comments[-1].body
+    assert L.RELEASE_APPROVED not in gh.issues[9].labels and L.BLOCKED in gh.issues[9].labels
+
+
+def test_a_passing_live_check_closes_the_release(releasing):
+    office, gh = releasing([release_issue(9, L.TESTING, comments=[deployed_comment()])],
+                           [Verdict("pass", "all pages load")])
+    office.execute(Task("live_check", 9))
+    assert gh.issues[9].state == "CLOSED" and L.DONE in gh.issues[9].labels
+
+
+def test_a_failing_live_check_asks_the_owner_and_rolls_back_only_on_approval(releasing):
+    old = release_issue(3, comments=[deployed_comment("0000aaa")])
+    old.state = "CLOSED"
+    office, gh = releasing([old, release_issue(9, L.TESTING, comments=[deployed_comment()])],
+                           [Verdict("fail", "the contact form 500s")])
+    office.execute(Task("live_check", 9))
+    issue = gh.issues[9]
+    assert L.BLOCKED in issue.labels and L.TESTING not in issue.labels
+    assert L.ROLLBACK_APPROVED in issue.comments[-1].body
+    assert office.ran == []
+
+    gh.edit_labels(9, add=[L.ROLLBACK_APPROVED])
+    office.execute(Task("rollback", 9))
+    assert office.ran == ["make rollback REF=0000aaa"]
+    assert L.ROLLBACK_APPROVED not in issue.labels and L.BLOCKED in issue.labels
+    # Rolled back, it is a pending release again: the same changes, waiting for approval.
+    assert orchestrator.planner.deployed(issue) is None
+
+
+def test_no_rollback_without_an_earlier_release_to_go_back_to(releasing):
+    office, gh = releasing([release_issue(9, L.BLOCKED, L.ROLLBACK_APPROVED,
+                                          comments=[deployed_comment()])])
+    office.execute(Task("rollback", 9))
+    assert office.ran == []
+    assert "no earlier release" in gh.issues[9].comments[-1].body
+    assert L.ROLLBACK_APPROVED not in gh.issues[9].labels
