@@ -37,9 +37,9 @@ Then ask for features by opening issues on the target repo. See [Usage](docs/USA
 Everything the office knows about a particular tool lives in that tool's [stack guide](docs/stack/README.md). The office detects which guides apply to a target and gives their rules to every agent, so supporting a new stack means contributing a guide:
 
 - **Backend:** [Django](docs/stack/DJANGO.md) + Django REST Framework, with uv and ruff
-- **Frontends:** [Next.js](docs/stack/NEXTJS.md) or [Nuxt](docs/stack/NUXT.md), in TypeScript, styled with [Tailwind CSS](docs/stack/TAILWIND.md)
+- **Frontends:** [Next.js](docs/stack/NEXTJS.md) or [Nuxt](docs/stack/NUXT.md), in TypeScript, or [Vite](docs/stack/VITE.md) single-page apps, styled with [Tailwind CSS](docs/stack/TAILWIND.md)
 - **Data:** [Postgres](docs/stack/POSTGRES.md) (and Redis where needed) via Docker Compose
-- **Deployment:** Docker containers on [Hetzner, behind Traefik](docs/stack/HETZNER-TRAEFIK.md)
+- **Deployment:** Docker containers on [Hetzner, behind Traefik](docs/stack/HETZNER-TRAEFIK.md), or static sites and frontends on [Vercel](docs/stack/VERCEL.md)
 
 The office still works on a repo that matches no guide, relying on the repo's own `AGENTS.md`.
 
@@ -78,9 +78,11 @@ Each document has one scope. Start with **How it works**.
 | [docs/stack/DJANGO.md](docs/stack/DJANGO.md) | Django + DRF backends: setup and agent rules |
 | [docs/stack/NEXTJS.md](docs/stack/NEXTJS.md) | Next.js frontends: setup and agent rules |
 | [docs/stack/NUXT.md](docs/stack/NUXT.md) | Nuxt frontends: setup and agent rules |
+| [docs/stack/VITE.md](docs/stack/VITE.md) | Vite single-page apps and static sites: setup and agent rules |
 | [docs/stack/TAILWIND.md](docs/stack/TAILWIND.md) | Tailwind CSS styling: setup and agent rules |
 | [docs/stack/POSTGRES.md](docs/stack/POSTGRES.md) | Postgres via Docker Compose: setup, database cleanup and agent rules |
 | [docs/stack/HETZNER-TRAEFIK.md](docs/stack/HETZNER-TRAEFIK.md) | Deploying to Hetzner behind Traefik |
+| [docs/stack/VERCEL.md](docs/stack/VERCEL.md) | Hosting on Vercel, with production deploys left to the owner |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | A step-by-step checklist for onboarding an existing repo |
 | [AGENTS.md](AGENTS.md) | Guidance for coding agents working on this repo, including the documentation rules |
 | [CLAUDE.md](CLAUDE.md) | Imports `AGENTS.md` for Claude Code |

@@ -9,9 +9,11 @@ What the office knows about each tool a target repo might be built with, one gui
 | [Django](DJANGO.md) | Backend | `manage.py` |
 | [Next.js](NEXTJS.md) | Frontend | `next.config.*` |
 | [Nuxt](NUXT.md) | Frontend | `nuxt.config.*` |
+| [Vite](VITE.md) | Frontend | `vite.config.*` |
 | [Tailwind CSS](TAILWIND.md) | Styling | `tailwindcss` in a `package.json` |
 | [Postgres](POSTGRES.md) | Data | a `postgres` image in the compose file |
 | [Hetzner and Traefik](HETZNER-TRAEFIK.md) | Deployment | `traefik` in a compose file under `deploy/` |
+| [Vercel](VERCEL.md) | Deployment | `vercel.json` |
 
 A repo can use any subset. The office still works on a repo that matches no guide; its agents then rely on the repo's own `AGENTS.md`.
 

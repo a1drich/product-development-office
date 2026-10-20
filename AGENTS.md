@@ -75,7 +75,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
 
 ## Target repos
 
-The stacks the office supports are listed in `docs/stack/README.md`, one guide per tool (Django, Next.js, Nuxt, Tailwind, Postgres, Hetzner and Traefik). Whatever the stack, it expects target repos to have:
+The stacks the office supports are listed in `docs/stack/README.md`, one guide per tool (Django, Next.js, Nuxt, Vite, Tailwind, Postgres, Hetzner and Traefik, and Vercel). Whatever the stack, it expects target repos to have:
 
 - an `AGENTS.md` (with a `CLAUDE.md` that imports it) and `docs/`, which every agent reads first
 - a single `make verify` or `npm run verify` command as the definition of done
