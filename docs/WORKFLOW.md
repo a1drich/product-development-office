@@ -31,7 +31,7 @@ Issue labels drive the workflow. The orchestrator polls the target repo, finds i
 
 ## Follow-up issues
 
-Any agent can ask for follow-up issues in its verdict: bugs it found, work it split off, or practice suggestions. The office files them with `status:triage`. To avoid duplicates, every agent's prompt lists the open issues, and agents point at an existing issue (or comment on it) instead of filing a new one. As a backstop, the office skips a follow-up whose title matches an open issue's, ignoring case, punctuation, articles and a `Practice:` prefix.
+Any agent can ask for follow-up issues in its verdict: bugs it found, work it split off, or practice suggestions. The office files them with `status:triage`. To avoid duplicates, every agent's prompt lists the open issues, and agents point at an existing issue (or comment on it) instead of filing a new one. As a backstop, the office skips a follow-up whose title matches an open issue's, ignoring case, punctuation, articles and a `Practice:` prefix. Agents running side by side only see the issues open when they started, so a `Practice:` suggestion is also checked against the practice issues open at the moment it's filed: if one covers the same topic (most of the shorter title's words appear in the other), the suggestion is added to it as a comment instead, and if three or more are already open, it isn't filed.
 
 ## Labels
 

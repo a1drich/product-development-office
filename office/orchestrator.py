@@ -55,6 +55,24 @@ def normalize_title(title: str) -> str:
     return " ".join(w for w in words if w not in {"a", "an", "the"})
 
 
+# Words that say nothing about a practice's topic.
+FILLER = {"a", "an", "the", "and", "or", "to", "of", "for", "in", "on", "with", "it", "its",
+          "add", "use", "make", "fix", "move", "keep", "run", "give", "each", "every", "real",
+          "repo", "practice"}
+
+
+def topic(title: str) -> set[str]:
+    """The words of a title that say what it's about, with plurals folded."""
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    return {w.removesuffix("s") if len(w) > 3 else w for w in words if w not in FILLER}
+
+
+def same_topic(a: str, b: str) -> bool:
+    """True when most of the shorter title's topic words are in the other title too."""
+    ta, tb = topic(a), topic(b)
+    return bool(ta and tb) and len(ta & tb) / min(len(ta), len(tb)) >= 0.6
+
+
 def format_open_issues(titles: dict[int, str], exclude: int) -> str:
     shown = [f"- #{n} {t}" for n, t in sorted(titles.items()) if n != exclude and t != STATUS_TITLE]
     return "\n".join(shown) or "(none)"
@@ -848,6 +866,21 @@ class Office:
                 return
         labels = [L.TRIAGE]
         if title.lower().startswith("practice:"):
+            # Agents running side by side suggest practices from the open issues they saw
+            # when they started, so check again against the practices open right now.
+            practices = self.gh.labelled_issues(L.PRACTICE, limit=100)
+            for existing in practices:
+                if same_topic(title, existing.title):
+                    log.info("#%s: %r is covered by open practice #%s; not filing it",
+                             source.number, title, existing.number)
+                    self.gh.comment(existing.number,
+                                    f"Also suggested while working on #{source.number}: "
+                                    f"{title}\n\n{body}\n{mark('also-suggested')}")
+                    return
+            if len(practices) >= self.cfg.max_open_practices:
+                log.info("#%s: %s practices are already open; not filing %r", source.number,
+                         len(practices), title)
+                return
             labels.append(L.PRACTICE)
             if self.cfg.practices_need_approval:
                 labels.append(L.BLOCKED)

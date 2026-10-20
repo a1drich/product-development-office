@@ -752,3 +752,33 @@ def test_no_rollback_without_an_earlier_release_to_go_back_to(releasing):
     assert office.ran == []
     assert "no earlier release" in gh.issues[9].comments[-1].body
     assert L.ROLLBACK_APPROVED not in gh.issues[9].labels
+
+
+def test_a_practice_overlapping_an_open_one_is_added_to_it_not_filed(make_office):
+    office, gh = make_office([
+        Issue(4, "Practice: Move agent guidance to AGENTS.md and add an MkDocs docs site with "
+                 "product brief, decision log and user manual", "", {L.PRACTICE, L.BLOCKED}),
+        Issue(1, "x", "", {L.READY})], [])
+    office.file_follow_up(gh.issues[1], "Practice: add AGENTS.md with a verify command, and a "
+                                        "docs site", "evidence")
+    assert len(gh.issues) == 2
+    assert "Also suggested while working on #1" in gh.issues[4].comments[-1].body
+    office.file_follow_up(gh.issues[1], "Practice: Pin Node in CI", "evidence")
+    assert len(gh.issues) == 3
+
+
+def test_no_practice_is_filed_once_the_cap_is_reached(make_office):
+    office, gh = make_office([Issue(n, f"Practice: topic {w}", "", {L.PRACTICE, L.BLOCKED})
+                              for n, w in ((2, "alpha"), (3, "beta"), (4, "gamma"))]
+                             + [Issue(1, "x", "", {L.READY})], [])
+    office.file_follow_up(gh.issues[1], "Practice: Pin Node in CI", "evidence")
+    assert len(gh.issues) == 4
+    office.file_follow_up(gh.issues[1], "Bug: the footer overlaps on mobile", "evidence")
+    assert len(gh.issues) == 5  # bugs aren't capped
+
+
+def test_same_topic():
+    assert not orchestrator.same_topic(
+        "Practice: Add `npm run verify` (lint + build + route smoke test) and run it in CI",
+        "Practice: Give each route its own title, meta description and canonical URL")
+    assert not orchestrator.same_topic("Fix login error on mobile", "Fix login button on desktop")
