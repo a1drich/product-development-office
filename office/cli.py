@@ -14,7 +14,7 @@ from office.gh import GitHub
 from office.orchestrator import Office
 from office.readiness import FAIL, PASS, WARN
 from office.shell import CommandError, run
-from office.workspace import Workspace
+from office.workspace import Workspace, folder_name
 
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 ICONS = {PASS: "✓", WARN: "!", FAIL: "✗"}
@@ -95,28 +95,61 @@ def cmd_labels(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def resolve_start_repos(args: list[str], cfg: Config) -> list[str]:
+    """The repos to run: the arguments, else the last ones started, else ask."""
+    repos = args or cfg.start_repos or ([cfg.repo] if cfg.repo else [])
+    if not repos:
+        answer = input("? Which GitHub repos should the office work on? "
+                       "(owner/name, several separated by spaces) ")
+        repos = answer.split()
+    for repo in repos:
+        if not REPO_RE.match(repo):
+            sys.exit(f"not a GitHub repo: {repo!r} (expected owner/name)")
+    repos = list(dict.fromkeys(repos))
+    if repos != cfg.start_repos or cfg.repo not in repos:
+        cfg.start_repos = repos
+        cfg.repo = cfg.repo if cfg.repo in repos else repos[0]
+        cfg.save()
+    return repos
+
+
 def cmd_start(args: argparse.Namespace, cfg: Config) -> int:
-    repo = resolve_repo(args.repo, cfg)
+    from office.floor import Floor
+    from office.orchestrator import Shared
+
+    repos = resolve_start_repos(args.repos, cfg)
     if not print_checks(auth.preflight()):
         print("\nfix the checks above, then run `office start` again")
         return 1
-    gh = GitHub(repo)
-    ws = Workspace(repo)
-    ws.ensure_clone()
-    ws.update_default_branch()
-    print(f"✓ cloned {repo} into {ws.clone}")
-    if args.dry_run:
-        missing = {lb.name for lb in L.LABELS} - gh.label_names()
-        print(f"→ dry run: {len(missing)} labels would be created; nothing will change")
-    else:
-        created = gh.ensure_labels()
-        print(f"✓ labels ready ({len(created)} created)")
-    office = Office(cfg, gh, ws, dry_run=args.dry_run)
-    print(f"→ verify command: {office.verify}")
+    shared = Shared()
+    offices = []
+    for repo in repos:
+        gh = GitHub(repo)
+        ws = Workspace(repo)
+        if ws.running_pid() and not args.dry_run:
+            print(f"✗ an office is already running on {repo} (pid {ws.running_pid()}); "
+                  f"stop it with `office stop {repo}`, or leave {repo} out")
+            return 1
+        ws.ensure_clone()
+        ws.update_default_branch()
+        print(f"✓ cloned {repo} into {ws.clone}")
+        if args.dry_run:
+            missing = {lb.name for lb in L.LABELS} - gh.label_names()
+            print(f"→ dry run: {len(missing)} labels would be created; nothing will change")
+        else:
+            created = gh.ensure_labels()
+            print(f"✓ labels ready ({len(created)} created)")
+        office = Office(cfg.for_repo(repo), gh, ws, dry_run=args.dry_run, shared=shared)
+        print(f"→ verify command: {office.verify}")
+        offices.append(office)
+    if len(repos) > 1:
+        limits = ", ".join(f"{role} {n}" for role, n in cfg.limits.items())
+        print(f"→ {len(repos)} repos share this machine's subscriptions: at most {limits} "
+              "at once across all of them")
     if not args.dry_run:
         print("→ Ctrl-C (or `office stop`) stops after running agents finish; "
               "press it twice (or `office stop --now`) to stop immediately")
-    office.run(exit_when_idle=args.exit_when_idle)
+    Floor(cfg, offices, shared).run(exit_when_idle=args.exit_when_idle)
     if not args.dry_run:
         print("stopped. Run `office start` again to pick up where it left off.")
     return 0
@@ -135,13 +168,15 @@ def cmd_stop(args: argparse.Namespace, cfg: Config) -> int:
     if not pid:
         print(f"no office is running on {repo}")
         return 0
+    together = ", ".join(r for r in ws.repos_in_process(pid) if r != repo)
+    also = f" It also runs {together}, which stop with it." if together else ""
     if args.now:
         os.kill(pid, signal.SIGTERM)
-        print(f"stopping the office on {repo} now (pid {pid})")
+        print(f"stopping the office on {repo} now (pid {pid}).{also}")
     else:
         os.kill(pid, signal.SIGINT)
         print(f"draining the office on {repo} (pid {pid}): it starts nothing new and exits "
-              "once running agents finish. `office stop --now` stops it immediately.")
+              f"once running agents finish. `office stop --now` stops it immediately.{also}")
     if args.no_wait:
         return 0
     while ws.running_pid() == pid:
@@ -172,12 +207,13 @@ def cmd_plan(args: argparse.Namespace, cfg: Config) -> int:
     repo = args.repo or cfg.repo
     if not repo or not REPO_RE.match(repo):
         sys.exit("which repo? `office plan owner/name`")
+    cfg = cfg.for_repo(repo)
     rows = plan.describe(GitHub(repo).open_issues(), datetime.now(UTC),
                          timedelta(minutes=cfg.claim_ttl_minutes))
     print(f"{repo}\n")
     print(plan.render(rows, cfg.limits))
-    leases = Leases(Workspace(repo).leases, cfg.agent_ports, cfg.ports_per_agent,
-                    cfg.reserved_ports, cfg.fixed_ports)
+    leases = Leases(Workspace(repo).leases, folder_name(repo), cfg.agent_ports,
+                    cfg.ports_per_agent, cfg.reserved_ports, cfg.fixed_ports)
     print("\n" + plan.render_leases(leases.table()))
     return 0
 
@@ -247,10 +283,11 @@ def cmd_clean(args: argparse.Namespace, cfg: Config) -> int:
             clean.clean_github(gh, plan)
             print("✓ GitHub cleaned")
 
-    if ws.clone.exists() or cfg.database_url:  # where Postgres is
+    database_url = cfg.for_repo(repo).database_url
+    if ws.clone.exists() or database_url:  # where Postgres is
         from office.databases import Databases
 
-        for name in Databases(ws.clone, repo, cfg.database_url).drop():
+        for name in Databases(ws.clone, repo, database_url).drop():
             print(f"✓ dropped database {name}")
     removed = clean.clean_local(ws, cfg)
     for r in removed:
@@ -302,8 +339,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("repo", nargs="?")
     p.set_defaults(fn=cmd_labels)
 
-    p = sub.add_parser("start", help="run the office on a repo until it is blocked")
-    p.add_argument("repo", nargs="?")
+    p = sub.add_parser("start", help="run the office on one or more repos until they are "
+                                     "blocked")
+    p.add_argument("repos", nargs="*", metavar="repo",
+                   help="owner/name; several run in one office, sharing the subscriptions")
     p.add_argument("--dry-run", action="store_true",
                    help="print what the office would do, without changing anything")
     p.add_argument("--exit-when-idle", action="store_true",

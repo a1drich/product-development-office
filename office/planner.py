@@ -39,6 +39,7 @@ class Task:
     kind: str
     issue: int
     priority: int = 9
+    repo: str = ""  # which repo's issue, when one office runs several
 
     @property
     def role(self) -> str | None:
@@ -146,37 +147,38 @@ def task_for(
     return None
 
 
-def plan(
+def candidates(
     issues: list[Issue],
     running: dict[int, str],
-    limits: dict[str, int],
-    paused: set[str],
     now: datetime,
     claim_ttl: timedelta,
     held: frozenset[str] = frozenset(),
+    repo: str = "",
 ) -> list[Task]:
-    """Tasks to start now, most urgent first, within each role's concurrency limit.
+    """Every task one repo could start now, most urgent first, before any limits.
 
-    `running` maps issue number -> role for agents already working. Task kinds in `held`
-    are not started this pass.
+    `running` maps issue number -> role for this repo's agents already working. Task kinds
+    in `held` are not started this pass.
     """
-    busy: dict[str, int] = {}
-    for role in running.values():
-        busy[role] = busy.get(role, 0) + 1
-
     open_numbers = {i.number for i in issues}
-    candidates = []
+    found = []
     for issue in issues:
         if issue.number in running:
             continue
         task = task_for(issue, now, claim_ttl, open_numbers)
         if task is None or task.kind in held:
             continue
-        candidates.append(task)
+        found.append(Task(task.kind, task.issue, task.priority, repo))
+    return sorted(found, key=lambda t: (t.priority, t.issue))
 
-    candidates.sort(key=lambda t: (t.priority, t.issue))
+
+def select(tasks: list[Task], busy: dict[str, int], limits: dict[str, int],
+           paused: set[str]) -> list[Task]:
+    """The tasks to start, taken in the order given, within each role's concurrency limit.
+    `busy` counts the agents of each role already running, in every repo."""
+    busy = dict(busy)
     chosen = []
-    for task in candidates:
+    for task in tasks:
         role = task.role
         if role is None:
             chosen.append(task)
@@ -186,6 +188,27 @@ def plan(
         busy[role] = busy.get(role, 0) + 1
         chosen.append(task)
     return chosen
+
+
+def busy_roles(running: dict[int, str]) -> dict[str, int]:
+    busy: dict[str, int] = {}
+    for role in running.values():
+        busy[role] = busy.get(role, 0) + 1
+    return busy
+
+
+def plan(
+    issues: list[Issue],
+    running: dict[int, str],
+    limits: dict[str, int],
+    paused: set[str],
+    now: datetime,
+    claim_ttl: timedelta,
+    held: frozenset[str] = frozenset(),
+) -> list[Task]:
+    """Tasks to start now in one repo, most urgent first, within each role's limit."""
+    return select(candidates(issues, running, now, claim_ttl, held), busy_roles(running),
+                  limits, paused)
 
 
 def actionable(issues: list[Issue], now: datetime, claim_ttl: timedelta) -> bool:

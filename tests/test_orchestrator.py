@@ -306,18 +306,18 @@ def test_normalize_title():
 def test_practices_review_is_scheduled_when_due_and_capped(make_office):
     office, gh = make_office([Issue(1, "x", "", {L.READY})], [])
     now = datetime.now(UTC)
-    task = office.practices_task(gh.open_issues(), [], now)
+    task = office.practices_task(gh.open_issues(), now)
     assert task and task.kind == "practices"
     status = gh.issues[task.issue]
     assert L.STATUS_ISSUE in status.labels
 
     office.last_practices = now
-    assert office.practices_task(gh.open_issues(), [], now) is None
+    assert office.practices_task(gh.open_issues(), now) is None
 
     office.last_practices = None
     for n in range(3):
         gh.create_issue(f"Practice: {n}", "", [L.PRACTICE, L.BLOCKED])
-    assert office.practices_task(gh.open_issues(), [], now) is None
+    assert office.practices_task(gh.open_issues(), now) is None
 
 
 def test_practices_review_files_suggestions_and_records_the_run(make_office):

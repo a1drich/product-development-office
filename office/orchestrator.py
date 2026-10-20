@@ -6,12 +6,12 @@ import logging
 import os
 import re
 import shutil
-import signal
 import threading
 import time
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -23,7 +23,7 @@ from office.docs_server import DocsServer
 from office.gh import GitHub, Issue, branch_name
 from office.planner import CLAIM_MARK, FAILED_MARK, Task
 from office.readiness import verify_command
-from office.workspace import Workspace
+from office.workspace import Workspace, folder_name
 
 log = logging.getLogger("office")
 
@@ -120,29 +120,61 @@ def release_body(changes: list[str], head: str, verify: str, release: str,
     )
 
 
-class Office:
-    def __init__(self, cfg: Config, gh: GitHub, ws: Workspace, dry_run: bool = False):
-        self.cfg = cfg
-        self.gh = gh
-        self.ws = ws
-        self.dry_run = dry_run
-        self.running: dict[int, str] = {}
-        self.futures: dict[Future, Task] = {}
+# The repo the current thread is working on, for log lines when one office runs several.
+CURRENT_REPO: ContextVar[str] = ContextVar("office_repo", default="")
+
+
+class RepoPrefix(logging.Filter):
+    """Prefixes each log line with the repo it's about, while several run in one office."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        repo = CURRENT_REPO.get()
+        if repo and not getattr(record, "office_repo", None):
+            record.msg = f"[{repo}] {record.msg}"
+            record.office_repo = repo
+        return True
+
+
+class Shared:
+    """What every repo's office in one process shares. They belong to the same owner and
+    use the machine's one Claude and one ChatGPT subscription, so a role that hits its
+    usage limit pauses everywhere, and the worker pool and stop requests are common."""
+
+    def __init__(self) -> None:
         self.paused_until: dict[str, datetime] = {}
-        self.last_summary = ""
-        self.status_issue: int | None = None
         # draining: start nothing new, let running agents finish, then exit.
         # stopping: stop now; running agents are ended and their runs don't count.
         self.draining = threading.Event()
         self.stopping = threading.Event()
+        self.pool: ThreadPoolExecutor | None = None
+
+
+class Office:
+    """Everything the office does on one repo. `office.floor.Floor` runs the loop, over
+    one or several of these."""
+
+    def __init__(self, cfg: Config, gh: GitHub, ws: Workspace, dry_run: bool = False,
+                 shared: Shared | None = None):
+        self.cfg = cfg
+        self.gh = gh
+        self.ws = ws
+        self.dry_run = dry_run
+        self.shared = shared or Shared()
+        self.running: dict[int, str] = {}
+        self.futures: dict[Future, Task] = {}
+        self.paused_until = self.shared.paused_until
+        self.draining = self.shared.draining
+        self.stopping = self.shared.stopping
+        self.last_summary = ""
+        self.status_issue: int | None = None
         self.docs = DocsServer(ws.clone, cfg.docs_port, ws.docs_log)
         self.last_practices: datetime | None = None
         self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
         self.dbs = databases.Databases(ws.clone, gh.repo, cfg.database_url)
         self.stacks = stacks.load()
         self.real_gh = shutil.which("gh")
-        self.leases = ports.Leases(ws.leases, cfg.agent_ports, cfg.ports_per_agent,
-                                   cfg.reserved_ports, cfg.fixed_ports)
+        self.leases = ports.Leases(ws.leases, folder_name(gh.repo), cfg.agent_ports,
+                                   cfg.ports_per_agent, cfg.reserved_ports, cfg.fixed_ports)
         # Merges finish on several threads; one at a time updates the release issue.
         self.release_lock = threading.Lock()
 
@@ -151,46 +183,35 @@ class Office:
     def paused(self, now: datetime) -> set[str]:
         return {role for role, until in self.paused_until.items() if until > now}
 
-    def cycle(self) -> list[Task]:
-        """One planning pass. Starts tasks and returns them."""
-        now = datetime.now(UTC)
-        issues = self.gh.open_issues()
+    def candidates(self, issues: list[Issue], now: datetime) -> list[Task]:
+        """Every task this repo could start now, most urgent first. The floor decides
+        which of them start, within the machine's limits."""
         # Design needs impeccable, so it waits while the setup issue is open.
         setup_open = any(i.title == readiness.IMPECCABLE_TITLE for i in issues)
-        tasks = planner.plan(
-            issues,
-            self.running,
-            self.cfg.limits,
-            self.paused(now),
-            now,
-            timedelta(minutes=self.cfg.claim_ttl_minutes),
-            held=frozenset({"design"}) if setup_open else frozenset(),
-        )
-        practices = self.practices_task(issues, tasks, now)
-        if practices:
-            tasks.append(practices)
-        if self.dry_run:
-            self.log_overview(issues, now)
-            for t in tasks:
-                log.info("would run %s on #%s (%s)", t.kind, t.issue,
-                         t.role or ("office" if t.kind in planner.OFFICE_RUN else "housekeeping"))
-            return tasks
-        for task in tasks:
-            self.start(task)
-        if not tasks and not self.running:
-            self.post_summary(issues)
-        return tasks
+        tasks = planner.candidates(
+            issues, self.running, now, timedelta(minutes=self.cfg.claim_ttl_minutes),
+            held=frozenset({"design"}) if setup_open else frozenset(), repo=self.gh.repo)
+        practices = self.practices_task(issues, now)
+        return tasks + [practices] if practices else tasks
+
+    def cycle(self) -> list[Task]:
+        """One planning pass over this repo alone. Starts tasks and returns them."""
+        from office.floor import Floor
+
+        return Floor(self.cfg, [self], self.shared).cycle()
+
+    def run(self, exit_when_idle: bool = False) -> None:
+        """Runs the loop over this repo alone."""
+        from office.floor import Floor
+
+        Floor(self.cfg, [self], self.shared).run(exit_when_idle)
 
     # --- practices --------------------------------------------------------------
 
-    def practices_task(self, issues: list[Issue], tasks: list[Task], now: datetime) -> Task | None:
-        """A practices review, when one is due and the PM has a free slot."""
+    def practices_task(self, issues: list[Issue], now: datetime) -> Task | None:
+        """A practices review, when one is due. It takes a PM slot like any other task."""
         open_practices = [i for i in issues if L.PRACTICE in i.labels]
         if len(open_practices) >= self.cfg.max_open_practices:
-            return None
-        pm_busy = sum(1 for r in self.running.values() if r == "pm")
-        pm_busy += sum(1 for t in tasks if t.role == "pm")
-        if "pm" in self.paused(now) or pm_busy >= self.cfg.limits.get("pm", 1):
             return None
         number = self.ensure_status_issue()
         if number in self.running:
@@ -202,7 +223,7 @@ class Office:
             self.last_practices = max(marks) if marks else datetime.min.replace(tzinfo=UTC)
         if now - self.last_practices < timedelta(hours=self.cfg.practices_interval_hours):
             return None
-        return Task("practices", number)
+        return Task("practices", number, repo=self.gh.repo)
 
     def do_practices(self, issue: Issue, task: Task) -> None:
         findings = [f for f in readiness.check_files(self.ws.clone) if f.level != readiness.PASS]
@@ -244,51 +265,6 @@ class Office:
         summary = ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
         log.info("%s open issues: %s", len(issues), summary or "none")
 
-    def run(self, exit_when_idle: bool = False) -> None:
-        if self.dry_run:
-            self.bootstrap()
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                self.pool = pool
-                self.loop(exit_when_idle)
-            return
-        self.ws.acquire_pidfile()
-        ghshim.install()
-        self.leases.clear()
-        previous = {sig: signal.signal(sig, self.on_signal)
-                    for sig in (signal.SIGINT, signal.SIGTERM)}
-        try:
-            with ThreadPoolExecutor(max_workers=sum(self.cfg.limits.values()) + 1) as pool:
-                self.pool = pool
-                try:
-                    self.recover_claims()
-                    self.sweep_databases()
-                    self.bootstrap()
-                    self.loop(exit_when_idle)
-                finally:
-                    pool.shutdown(wait=True, cancel_futures=True)
-                    self.docs.stop()
-        finally:
-            for sig, handler in previous.items():
-                signal.signal(sig, handler)
-            self.ws.release_pidfile()
-
-    def on_signal(self, signum, frame) -> None:
-        """First Ctrl-C (or `office stop`) drains; a second one (or `office stop --now`, which
-        sends SIGTERM) stops now."""
-        if signum == signal.SIGINT and not self.draining.is_set():
-            self.draining.set()
-            log.info("draining: starting nothing new; %s agent(s) finishing their step. "
-                     "Ctrl-C again, or `office stop --now`, to stop them now.", len(self.running))
-        else:
-            self.hard_stop()
-
-    def hard_stop(self) -> None:
-        self.stopping.set()
-        self.draining.set()
-        ended = shell.stop_all()
-        log.info("stopping now: ended %s running command(s); interrupted steps rerun at the "
-                 "next start", ended)
-
     def recover_claims(self) -> None:
         """A fresh office has no agents running, so every in-progress claim is left over
         from a previous run that stopped. Release them now instead of waiting for them to
@@ -323,36 +299,13 @@ class Office:
                                  [L.READY, "priority:p0"])
         log.info("filed #%s: %s", n, readiness.IMPECCABLE_TITLE)
 
-    def loop(self, exit_when_idle: bool) -> None:
-        while True:
-            self.reap()
-            if self.draining.is_set():
-                if not self.running:
-                    log.info("all agents finished; stopped")
-                    return
-                if self.stopping.is_set():
-                    shell.stop_all()
-                time.sleep(1)
-                continue
-            if not self.dry_run:
-                self.docs.ensure()
-            started = self.cycle()
-            if self.dry_run:
-                return
-            idle = not started and not self.running
-            if idle and exit_when_idle:
-                log.info("nothing left to act on; exiting")
-                return
-            # Wakes early when a drain or stop is requested.
-            self.draining.wait(self.cfg.idle_poll_seconds if idle else self.cfg.poll_seconds)
-
     def start(self, task: Task) -> None:
         if task.kind in planner.HOUSEKEEPING:
             self.safely(task, self.housekeeping)
             return
         self.running[task.issue] = task.role or "office"
         log.info("starting %s on #%s (%s)", task.kind, task.issue, self.running[task.issue])
-        self.futures[self.pool.submit(self.safely, task, self.execute)] = task
+        self.futures[self.shared.pool.submit(self.safely, task, self.execute)] = task
 
     def reap(self) -> None:
         for fut in [f for f in self.futures if f.done()]:
@@ -360,6 +313,7 @@ class Office:
             self.running.pop(task.issue, None)
 
     def safely(self, task: Task, fn) -> None:
+        CURRENT_REPO.set(self.gh.repo)
         try:
             fn(task)
         except Exception as e:  # one bad task must not stop the office
@@ -480,6 +434,7 @@ class Office:
         """Who the agent is, and its commands: the `gh` wrapper that signs what it posts,
         and `office-lease` for fixed port sets."""
         env = {"OFFICE_AGENT_ROLE": role, "OFFICE_ISSUE": str(issue),
+               "OFFICE_REPO": self.gh.repo, "OFFICE_PID": str(self.leases.pid),
                "OFFICE_LEASES": str(self.ws.leases),
                "PATH": f"{ghshim.BIN}{os.pathsep}{os.environ.get('PATH', '')}"}
         if self.real_gh:

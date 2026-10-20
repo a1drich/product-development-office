@@ -15,6 +15,7 @@ uv run pytest tests/test_planner.py      # one test file
 uv run pytest -k blocker                 # tests matching a name
 uv run office check owner/name           # readiness check (read-only)
 uv run office start owner/name --dry-run # print the plan, change nothing
+uv run office start owner/a owner/b      # several repos in one office (shared limits)
 uv run office docs serve owner/name      # browse a target's docs site
 uv run office plan owner/name            # what happens next (read-only)
 uv run office stop owner/name [--now]    # drain (or stop immediately) a running office
@@ -27,7 +28,7 @@ Never run `office start` without `--dry-run` against a repo the owner hasn't ask
 ## Code map
 
 - `office/planner.py` is pure logic (labels → next task) and has no I/O. Keep it that way, and test changes to it in `tests/test_planner.py`.
-- `office/orchestrator.py` applies verdicts. Its tests (`tests/test_orchestrator.py`) use a fake GitHub and stubbed agents; extend the fakes rather than calling real CLIs in tests.
+- `office/floor.py` is the loop over every repo the office runs: it plans across them within machine-wide limits. `office/orchestrator.py` (`Office`) is everything for one repo, and applies verdicts. Its tests (`tests/test_orchestrator.py`) use a fake GitHub and stubbed agents; extend the fakes rather than calling real CLIs in tests.
 - Role prompts live in `office/prompts/`, with `{{name}}` placeholders that are filled in a single pass. Every prompt ends with the shared `_verdict.md`. When you add an outcome, update the prompt, the `allowed` set in the orchestrator and a test together.
 - All external commands go through `office/shell.run`, which strips API keys from the environment. Git calls on a target go through `Workspace.git`, which serializes them and retries lock contention.
 - Everything the office posts to GitHub is signed (`office/signature.py`): the orchestrator in `office/gh.py`, agents through the `gh` wrapper in `office/ghshim.py`. The signature's marker must never start with `<!-- office:`, because the planner treats those comments as state.
@@ -51,14 +52,15 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
   - PM, Designer and Engineers run on `claude` (Claude Code, headless `-p`) with a Claude subscription.
   - Reviewers and Testers run on `codex` with a ChatGPT subscription.
   - API keys are never used. The orchestrator unsets `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in each agent's environment and refuses to start if a CLI reports API-key auth.
-  - When a role hits its usage limit, that role pauses. It never falls back to API billing.
+  - When a role hits its usage limit, that role pauses, in every repo the office runs. It never falls back to API billing.
+- **One office runs several repos on one subscription.** All repos belong to the same owner, so `limits` cap each role across every repo together, the most urgent task goes first whichever repo it's in, and machine-wide settings can't be overridden per repo. Each repo keeps its own GitHub state, clone, worktrees and settings.
 - **Code is written by one model and checked by another.** Claude writes the code; Codex reviews and tests it.
 - **Merging and releasing are treated differently.**
   - The Tester merges a PR only after the target repo's full verification gate passes locally and the acceptance criteria are verified. CI must also pass if the repo has it.
   - Deploying and releasing are always a human decision. A merge never triggers either. The office collects merged changes in one `office:release` issue, and releases only when a repo admin adds `release:approved`: it checks the default branch hasn't moved, runs verify, then the target's `make release`, and Codex checks the live site. It rolls back only on `rollback:approved`. Agents never release, and can't set either label.
 - **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks, and is labelled `office:blocker` plus `blocked:human`. Three failures in a row on one issue also file a blocker.
 - **Startup has a fixed sequence:**
-  1. Ask for the target repo (`owner/name`), or read it from a CLI argument or saved config.
+  1. Ask for the target repos (`owner/name`, one or more), or read them from CLI arguments or saved config.
   2. Check `gh`, `claude` and `codex` auth.
   3. Clone the target repo.
   4. Create any missing labels.

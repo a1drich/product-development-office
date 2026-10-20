@@ -33,12 +33,20 @@ class Workspace:
         self.worktrees = root / f"{name}-worktrees"
         self.docs_log = root / f"{name}-mkdocs.log"
         self.pidfile = root / f"{name}.pid"
-        self.leases = root / f"{name}-leases"
+        # Shared by every office on the machine; each repo's leases are named after it.
+        self.leases = root / "leases"
         self.lock = threading.RLock()
 
     @property
     def paths(self) -> list[Path]:
-        return [self.clone, self.worktrees, self.docs_log, self.pidfile, self.leases]
+        """This repo's own local state. The shared leases folder isn't in it; its lease
+        files are (see `own_leases`)."""
+        legacy_leases = self.root / f"{folder_name(self.repo)}-leases"
+        return [self.clone, self.worktrees, self.docs_log, self.pidfile, legacy_leases,
+                *self.own_leases()]
+
+    def own_leases(self) -> list[Path]:
+        return sorted(self.leases.glob(f"{folder_name(self.repo)}.*.json"))
 
     def running_pid(self) -> int | None:
         """The pid of the office running on this repo, if one is."""
@@ -50,6 +58,18 @@ class Workspace:
         except PermissionError:
             pass  # alive, but owned by someone else
         return pid
+
+    def repos_in_process(self, pid: int) -> list[str]:
+        """Every repo the office process `pid` runs, read from the pidfiles."""
+        repos = []
+        for f in sorted(self.root.glob("*.pid")):
+            try:
+                if int(f.read_text().strip()) == pid:
+                    owner, _, name = f.stem.partition("__")
+                    repos.append(f"{owner}/{name}")
+            except (OSError, ValueError):
+                continue
+        return repos
 
     def acquire_pidfile(self) -> None:
         pid = self.running_pid()

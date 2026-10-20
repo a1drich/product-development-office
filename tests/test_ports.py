@@ -1,3 +1,4 @@
+import os
 import socket
 import subprocess
 import sys
@@ -10,7 +11,7 @@ from office.ports import Leases, in_use, label, parse_range, stop_listeners
 
 
 def leases(tmp_path, busy=(), fixed=None, reserved=("3000-3099",), agent="40000-40029"):
-    return Leases(tmp_path / "leases", agent, 10, list(reserved), fixed or {},
+    return Leases(tmp_path / "leases", "acme__app", agent, 10, list(reserved), fixed or {},
                   probe=lambda p: p in busy)
 
 
@@ -51,7 +52,7 @@ def test_a_fixed_set_in_use_outside_the_office_is_not_claimed(tmp_path):
     lz = leases(tmp_path, busy={3012}, fixed={"oauth": [3011, 3012]})
     ports_, why = lz.claim("oauth", 5)
     assert ports_ is None and "3012" in why
-    assert not (tmp_path / "leases" / "fixed-oauth").exists()
+    assert not (tmp_path / "leases" / "acme__app.fixed-oauth.json").exists()
 
 
 def test_unknown_fixed_set(tmp_path):
@@ -76,6 +77,8 @@ def test_the_cli_claims_for_the_agents_issue(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(ports, "in_use", lambda p: False)
     monkeypatch.setenv("OFFICE_ISSUE", "7")
     monkeypatch.setenv("OFFICE_LEASES", str(tmp_path))
+    monkeypatch.setenv("OFFICE_REPO", "acme/app")
+    monkeypatch.setenv("OFFICE_PID", str(os.getpid()))
     assert ports.cli(["oauth"]) == 0
     assert capsys.readouterr().out.strip() == "45011 45012"
     monkeypatch.setenv("OFFICE_ISSUE", "8")
@@ -112,7 +115,7 @@ def test_probe_and_stop_against_a_real_server():
 @pytest.mark.parametrize("busy", [True, False])
 def test_lease_uses_the_real_probe_by_default(tmp_path, busy):
     port = free_port()
-    lz = Leases(tmp_path, f"{port}-{port}", 1, [], {})
+    lz = Leases(tmp_path, "acme__app", f"{port}-{port}", 1, [], {})
     if busy:
         with socket.socket() as s:
             s.bind(("127.0.0.1", port))
@@ -120,3 +123,24 @@ def test_lease_uses_the_real_probe_by_default(tmp_path, busy):
             assert lz.lease(1) is None
     else:
         assert lz.lease(1) == range(port, port + 1)
+
+
+def test_offices_on_different_repos_never_share_ports(tmp_path):
+    a = leases(tmp_path, fixed={"oauth": [40005]})
+    b = Leases(tmp_path / "leases", "acme__site", "40000-40029", 10, [], {"oauth": [40005]},
+               probe=lambda p: False)
+    assert a.lease(1) == range(40000, 40010)
+    assert b.lease(1) == range(40010, 40020)  # repo a's block is taken, whoever asks
+    ports_, why = b.claim("oauth", 2)  # inside repo a's block
+    assert ports_ is None and "another agent's lease" in why
+    b.clear()  # clearing one repo's leftovers leaves the other's leases alone
+    assert a.table() == [("ports", 1, "40000-40009")] and b.table() == []
+
+
+def test_a_lease_whose_office_exited_no_longer_holds_its_ports(tmp_path):
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    gone = Leases(tmp_path / "leases", "acme__site", "40000-40009", 10, [], {},
+                  probe=lambda p: False, pid=dead.pid)
+    assert gone.lease(1) == range(40000, 40010)
+    assert leases(tmp_path, agent="40000-40009").lease(1) == range(40000, 40010)

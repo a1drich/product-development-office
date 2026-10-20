@@ -1,24 +1,40 @@
 """Local office configuration, saved to .office/config.json (gitignored).
 
-The target repo is remembered here so a restart doesn't ask again. Everything else is
-an optional override of the defaults below.
+The target repos are remembered here so a restart doesn't ask again. Everything else is
+an optional override of the defaults below. One office process can run several repos,
+owned by the same person and sharing the machine's subscriptions, so some settings are
+machine-wide and the rest can be overridden per repo under `repos`.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / ".office" / "config.json"
 WORKSPACE = ROOT / "workspace"
 
+# Settings that describe the machine and its subscriptions, not one repo, so `repos`
+# can't override them: every repo's agents count against the same limits and ports.
+MACHINE_WIDE = {"repo", "start_repos", "repos", "limits", "poll_seconds", "idle_poll_seconds",
+                "rate_limit_pause_minutes", "agent_ports", "ports_per_agent", "reserved_ports"}
+# Dict settings whose overrides merge onto the defaults instead of replacing them.
+MERGED = ("limits", "codex_sandbox")
+
 
 @dataclass
 class Config:
+    # The repo single-repo commands (plan, stop, release...) use when given none.
     repo: str | None = None
-    # How many agents of each role may run at once.
+    # The repos `office start` runs, in one process, when given none.
+    start_repos: list[str] = field(default_factory=list)
+    # Per-repo overrides of any setting not in MACHINE_WIDE, keyed by owner/name, such as
+    # {"owner/name": {"database_url": "postgres://...", "fixed_ports": {...}}}.
+    repos: dict[str, dict] = field(default_factory=dict)
+    # How many agents of each role may run at once, across every repo the office runs:
+    # they share one Claude and one ChatGPT subscription.
     limits: dict[str, int] = field(
         default_factory=lambda: {"pm": 1, "designer": 1, "engineer": 1, "reviewer": 1, "tester": 1}
     )
@@ -67,11 +83,25 @@ class Config:
         known = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         cfg = cls(**known)
         # Merge partial dict overrides onto the defaults.
-        for name in ("limits", "codex_sandbox"):
+        for name in MERGED:
             merged = getattr(cls(), name)
             merged.update(data.get(name, {}))
             setattr(cfg, name, merged)
+        for repo in cfg.repos:
+            cfg.for_repo(repo)  # fail at startup on a bad override, not mid-run
         return cfg
+
+    def for_repo(self, repo: str) -> Config:
+        """The settings for one repo: these, with its `repos` overrides applied."""
+        overrides = self.repos.get(repo, {})
+        fields = self.__dataclass_fields__
+        bad = sorted(k for k in overrides if k in MACHINE_WIDE or k not in fields)
+        if bad:
+            raise ValueError(f"`repos.{repo}` in .office/config.json can't set "
+                             f"{', '.join(bad)}: unknown, or a machine-wide setting")
+        changes = {k: ({**getattr(self, k), **v} if k in MERGED else v)
+                   for k, v in overrides.items()}
+        return replace(self, **changes)
 
     def save(self, path: Path = CONFIG_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

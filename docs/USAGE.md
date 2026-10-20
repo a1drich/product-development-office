@@ -19,13 +19,14 @@ uv run office check owner/name               # is the repo ready? (read-only)
 uv run office check owner/name --file-issues # file an issue for each gap
 uv run office start owner/name --dry-run     # show what the office would do
 uv run office start owner/name               # run until blocked
+uv run office start owner/a owner/b owner/c  # several repos in one office (see below)
 ```
 
-Run with no repo, `office start` asks for one and remembers it in `.office/config.json`:
+Run with no repo, `office start` asks for one or more and remembers them in `.office/config.json`:
 
 ```
 $ uv run office start
-? Which GitHub repo should the office work on? (owner/name) acme/widget-app
+? Which GitHub repos should the office work on? (owner/name, several separated by spaces) acme/widget-app
 ✓ no API keys: none set
 ✓ gh: logged in
 ✓ claude: logged in (max)
@@ -38,13 +39,13 @@ $ uv run office start
 
 Startup steps:
 
-1. Read the target repo (`owner/name`) from the argument or the saved config, or ask for it.
+1. Read the target repos (`owner/name`) from the arguments or the saved config, or ask for them.
 2. Check that no API key is set, and that `gh`, `claude` (subscription login) and `codex` (ChatGPT login) are logged in. Startup refuses to continue otherwise.
-3. Clone the repo into `workspace/`, which this project's git history doesn't track.
-4. Create any missing office labels on the target repo.
+3. Clone each repo into `workspace/`, which this project's git history doesn't track.
+4. Create any missing office labels on each target repo.
 5. Release any `status:in-progress` claims left over from a previous run (a fresh office has no agents running).
 6. If the [impeccable](https://github.com/pbakaus/impeccable) design skill isn't committed to the repo, file an "Add the impeccable design skill" issue labelled `status:ready` and `priority:p0`, unless one is already open. An engineer installs and commits it in a PR that is reviewed and tested like any other, and design work waits until the issue closes. The office never commits to the target itself.
-7. Hand control to the orchestrator loop.
+7. Hand control to the loop, which runs every repo together.
 
 ## Stopping and resuming
 
@@ -60,7 +61,7 @@ Run `office start` again to pick up where it left off. All state lives in GitHub
 - a step stopped with `--now` (triage, design, review or test) reruns from the start, because labels only move when an agent finishes, and it isn't counted as a failure;
 - a stopped engineer's claim is released at the next start, and any work it had pushed is kept.
 
-Only one office can run per repo. `office start` refuses if another is already running on it.
+Only one office can run per repo. `office start` refuses if another is already running on it. When one office runs several repos, stopping it stops all of them (`office stop` on any of them says which).
 
 | Command | What it does |
 |---|---|
@@ -72,9 +73,9 @@ Only one office can run per repo. `office start` refuses if another is already r
 | `office release [repo] [--rollback] [--yes]` | Shows the open release issue's changes and, once you confirm, approves it by adding `release:approved` as you. `--rollback` approves rolling back a release whose live check failed. The running office then does the rest (see [Releases](WORKFLOW.md#releases)); adding the label on GitHub does the same. |
 | `office clean [repo] [--github] [--yes]` | Removes a project's local folders and the throwaway databases its agents created, and forgets it as the saved repo, keeping your settings. Refuses while the office or an agent is still running there. `--github` also deletes the office's labels, its `office/issue-*` branches without an open PR, and the status issue, after showing the plan and asking. |
 | `office docs build\|serve [repo]` | Builds the target's MkDocs site with `--strict`, or serves it locally |
-| `office start [repo] [--dry-run] [--exit-when-idle]` | Runs the office. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
+| `office start [repo ...] [--dry-run] [--exit-when-idle]` | Runs the office on one or more repos, in one process (see [Several repos at once](#several-repos-at-once)). With none, it runs the repos it last started. `--dry-run` prints the plan and changes nothing. `--exit-when-idle` exits instead of polling once everything is blocked or done. |
 
-Settings such as concurrency per role (`limits`), poll intervals and the claim timeout can be overridden in `.office/config.json`. If the target's local Postgres isn't the one its compose file describes (another project already holds that port, say), set `database_url` to `postgres://user:password@host:port/dbname` so the office drops agents' throwaway databases in the right place. The defaults are in `office/config.py`. The config is read at startup, so changes apply from the next `office start`.
+Settings such as concurrency per role (`limits`), poll intervals and the claim timeout can be overridden in `.office/config.json`, and settings that belong to one repo go under `repos` (see [Several repos at once](#several-repos-at-once)). If a target's local Postgres isn't the one its compose file describes (another project already holds that port, say), set that repo's `database_url` to `postgres://user:password@host:port/dbname` so the office drops agents' throwaway databases in the right place. The defaults are in `office/config.py`. The config is read at startup, so changes apply from the next `office start`.
 
 Ports have their own settings. Agents only use ports the office leases them (see [Architecture](ARCHITECTURE.md)), so your own dev servers and the agents never collide:
 
@@ -84,6 +85,32 @@ Ports have their own settings. Agents only use ports the office leases them (see
 | `ports_per_agent` | `10` | Ports in each run's block |
 | `reserved_ports` | `["3000-3099", "5173-5199", "8000-8099"]` | Your ports: agents never get these |
 | `fixed_ports` | `{}` | Named sets that must match outside configuration, such as `{"oauth": [3011, 3012]}` for a sign-in provider's allowed origins. One agent at a time claims a set. |
+
+## Several repos at once
+
+One office can run several repos you own: `uv run office start owner/a owner/b owner/c`. It remembers them, so a plain `office start` runs the same set next time. They share the machine's Claude and ChatGPT subscriptions, so:
+
+- **`limits` cover every repo together.** With `"engineer": 2`, at most two engineers run at once across all the repos, not two each.
+- **The most urgent work goes first, whichever repo it's in.** A `priority:p0` issue in one repo starts before a `priority:p2` in another. Equally urgent work takes turns between the repos.
+- **A usage limit pauses that role everywhere,** since every repo was drawing on the same subscription.
+- **Each repo keeps its own state:** its clone, worktrees, status issue, release issue and docs site. The docs sites get one port each, from `docs_port` up (8787, 8788, ...); the office logs each one's URL, and each repo's status issue links its own.
+- **Log lines start with the repo** they're about, such as `[owner/a] #12 -> status:in-review`.
+- **Ports come from one pool.** Agents in any repo never get a port another agent holds, even one leased by a separate `office start` on the same machine.
+
+Settings for one repo go under `repos`, keyed by `owner/name`. Any setting can be set there except the ones that describe the machine (`limits`, `poll_seconds`, `idle_poll_seconds`, `rate_limit_pause_minutes`, `agent_ports`, `ports_per_agent` and `reserved_ports`). `office start` refuses a config that tries:
+
+```json
+{
+  "limits": {"engineer": 2},
+  "repos": {
+    "owner/a": {"database_url": "postgres://app:app@localhost:5547/app",
+                "fixed_ports": {"oauth": [3011, 3012]}},
+    "owner/b": {"practices_need_approval": false}
+  }
+}
+```
+
+`office plan`, `office release`, `office stop` and the other commands still take one repo.
 
 ## Day to day
 
@@ -140,17 +167,17 @@ What happens next, all visible as comments on the issue:
 
 ## Switching projects and cleaning up
 
-To move to another project, run `office start owner/other-repo`. The new repo replaces the saved one in `.office/config.json`, and it gets its own folder under `workspace/`. Nothing carries over, because each project's state lives in its own GitHub issues.
+To move to another project, run `office start owner/other-repo`. The new repo replaces the saved ones in `.office/config.json`, and it gets its own folder under `workspace/`. Nothing carries over, because each project's state lives in its own GitHub issues.
 
 What the office keeps locally, all gitignored:
 
 | Path | What |
 |---|---|
-| `.office/config.json` | The saved repo and your setting overrides |
+| `.office/config.json` | The saved repos and your setting overrides |
 | `workspace/<owner>__<repo>/` | The main clone of the target |
 | `workspace/<owner>__<repo>-worktrees/` | One worktree per issue being worked on |
 | `workspace/<owner>__<repo>-mkdocs.log` | The live docs server's log |
-| `workspace/<owner>__<repo>-leases/` | The ports running agents hold, shown by `office plan`; cleared at every start |
+| `workspace/leases/` | The ports running agents hold, one file per lease named after its repo, shared by every office on the machine. `office plan` shows a repo's; each start clears its repos' leftovers. |
 | `workspace/<owner>__<repo>.pid` | The running office's process id, used by `office stop`; removed when it exits |
 
 Folders include the owner, so `acme/web` and `other/web` never collide. Folders from older versions, named after the repo alone, are moved to the new names automatically, worktrees included, the next time the office uses them. A folder still in use by a running office is never moved.

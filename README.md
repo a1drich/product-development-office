@@ -27,6 +27,7 @@ uv sync && uv run playwright install chromium
 
 uv run office check owner/name     # is the repo ready? (read-only)
 uv run office start owner/name     # run until everything is waiting on you
+uv run office start owner/a owner/b   # or several repos, sharing your subscriptions
 uv run office plan owner/name      # in another terminal: what happens next
 ```
 

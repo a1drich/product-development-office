@@ -4,13 +4,13 @@ The office in three pictures: the agent loop that drives everything, the path on
 
 ## 1. The agent loop
 
-`office start` runs one loop on your machine. Every minute it reads the target repo's open issues from GitHub, decides what each one needs next from its labels, and hands the work to an agent. Agents do the work and report back with a short verdict. Only the office changes labels, files blockers and merges.
+`office start` runs one loop on your machine, over one target repo or several. Every minute it reads each target repo's open issues from GitHub, decides what each one needs next from its labels, and hands the work to an agent. Agents do the work and report back with a short verdict. Only the office changes labels, files blockers and merges.
 
 ```mermaid
 flowchart TD
-    A[Read open issues<br/>from GitHub] --> B[Plan: each issue's next step<br/>from its labels, priority,<br/>claims and dependencies]
+    A[Read open issues<br/>from GitHub, in every repo] --> B[Plan: each issue's next step<br/>from its labels, priority,<br/>claims and dependencies]
     B --> C{Anything an agent<br/>can do now?}
-    C -- yes --> D[Start agents,<br/>within each role's limit]
+    C -- yes --> D[Start agents, most urgent first,<br/>within each role's limit<br/>across every repo]
     D --> E[Agent works in its own folder:<br/>edits the issue, writes code,<br/>opens a PR, reviews or tests]
     E --> F[Agent returns a verdict:<br/>ready, opened, approve,<br/>pass, fail, waiting, blocked...]
     F --> G[Office applies it:<br/>moves the label, comments,<br/>files blockers and follow-ups,<br/>merges after tests and CI]
@@ -24,7 +24,7 @@ What keeps it running unattended:
 - **GitHub is the only state.** Stop the office at any time: Ctrl-C or `office stop` lets running agents finish first, and `office start` picks up from the labels.
 - **Agents never guess.** A decision only you can make becomes a blocker issue you can answer in under a minute, and the office carries on with other work.
 - **Sequencing isn't your problem.** An issue that needs another to land first waits, and is requeued when that issue closes.
-- **Failures are contained.** A step that fails three times becomes a blocker, a role that hits its usage limit pauses while the others continue, and anything an agent leaves running is stopped.
+- **Failures are contained.** A step that fails three times becomes a blocker, a role that hits its usage limit pauses (in every repo, since they share the subscription) while the others continue, and anything an agent leaves running is stopped.
 
 ## 2. One feature, from request to release
 
