@@ -32,7 +32,7 @@ class FakeGitHub:
         return self.issues[n]
 
     def create_issue(self, title, body, labels):
-        n = max(self.issues) + 1
+        n = max(self.issues, default=0) + 1
         self.issues[n] = Issue(n, title, body, set(labels))
         return n
 

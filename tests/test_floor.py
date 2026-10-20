@@ -45,6 +45,17 @@ def test_limits_count_agents_in_every_repo(tmp_path):
     assert started == []
 
 
+def test_a_repo_whose_work_waits_on_a_shared_limit_is_not_reported_idle(tmp_path):
+    fl, (a, _, _), _ = floor(tmp_path, {"acme/a": [ready(1)], "acme/b": [ready(2)],
+                                        "acme/c": []}, {"engineer": 1})
+    a.running = {7: "engineer"}
+    summaries = []
+    for o in fl.offices:
+        o.post_summary = lambda issues, repo=o.gh.repo: summaries.append(repo)
+    fl.cycle()
+    assert summaries == ["acme/c"]
+
+
 def test_equally_urgent_work_takes_turns_between_repos(tmp_path):
     fl, _, started = floor(tmp_path, {"acme/a": [ready(1)], "acme/b": [ready(2)]},
                            {"engineer": 1})

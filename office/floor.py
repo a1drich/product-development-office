@@ -75,7 +75,9 @@ class Floor:
                 continue
             for t in mine:
                 by_repo[t.repo].start(t)
-            if not mine and not o.running:
+            # Work held back by a limit shared with the other repos isn't waiting on a human.
+            queued = any(t.repo == o.gh.repo for t in found)
+            if not queued and not o.running:
                 o.post_summary(issues[o.gh.repo])
         CURRENT_REPO.set("")
         return tasks
