@@ -47,7 +47,7 @@ The office still works on a repo that matches no guide, relying on the repo's ow
 Whatever the stack, it expects these repo conventions (details in the [setup guide](docs/SETUP.md#2-preparing-a-target-repo)):
 
 - `AGENTS.md` (imported by `CLAUDE.md`) and `docs/` describe the product, and every agent reads them first.
-- A single verification command (`make verify` or `npm run verify`) is the definition of done.
+- A single verification command (`make verify` or `npm run verify`) is the definition of done. Without one, the office's first task is adding it, and nothing else merges until it lands.
 - The design system lives in the repo (`DESIGN.md` or `docs/design-system.md`), and the [impeccable](https://github.com/pbakaus/impeccable) design skill is committed to it.
 - An [MkDocs](https://www.mkdocs.org/) site over `docs/`, with a user manual and feature catalog at `docs/manual/` (see [Docs site and user manual](docs/DOCS-SITE.md)).
 - Releases and deploys are always a human decision. With a `make release` command, the office prepares each release and runs it once you approve it; agents never run one.

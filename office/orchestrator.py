@@ -110,6 +110,23 @@ Design work waits until this issue closes.
 {mark("setup")}"""
 
 
+VERIFY_BODY = f"""\
+The office merges a PR only after the repo's verify command passes, and this repo doesn't \
+have one yet. Until this issue closes, the office tests and merges nothing else: other work \
+waits at `status:testing`.
+
+## Acceptance criteria
+- [ ] `make verify` (or `npm run verify`) runs every check the repo has, plus those its stack \
+calls for (see the stack guidance in your prompt), such as lint, typecheck, tests and the build, \
+and `mkdocs build --strict` once there is a docs site. It exits non-zero on any failure.
+- [ ] It passes on a fresh clone with no `.env` or installed dependencies, which is where \
+the office verifies a release: it creates a missing `.env` from `.env.example` and installs \
+missing dependencies from the lockfiles without rewriting them (`npm ci`, not `npm install`).
+- [ ] `AGENTS.md` documents it as the definition of done.
+- [ ] If the repo has CI, it runs the same checks.
+{mark("setup")}"""
+
+
 def blocker_body(blocker: dict, blocks: list[int]) -> str:
     options = "\n".join(f"{i}. {opt}" for i, opt in enumerate(blocker.get("options") or [], 1))
     return (
@@ -197,7 +214,6 @@ class Office:
         self.status_issue: int | None = None
         self.docs = DocsServer(ws.clone, cfg.docs_port, ws.docs_log)
         self.last_practices: datetime | None = None
-        self.verify = verify_command(ws.clone) or "the repo's verify command (see AGENTS.md)"
         self.dbs = databases.Databases(ws.clone, gh.repo, cfg.database_url)
         self.stacks = stacks.load()
         self.real_gh = shutil.which("gh")
@@ -205,6 +221,16 @@ class Office:
                                    cfg.ports_per_agent, cfg.reserved_ports, cfg.fixed_ports)
         # Merges finish on several threads; one at a time updates the release issue.
         self.release_lock = threading.Lock()
+
+    @property
+    def verify(self) -> str:
+        """The repo's verify command, read from the main clone each time: a merge can add it."""
+        return verify_command(self.ws.clone) or "the repo's verify command (see AGENTS.md)"
+
+    def merges_held(self) -> bool:
+        """Nothing but the issue adding a verify command is tested while the repo has none,
+        so nothing reaches the default branch unverified."""
+        return verify_command(self.ws.clone) is None
 
     # --- loop -------------------------------------------------------------------
 
@@ -219,6 +245,10 @@ class Office:
         tasks = planner.candidates(
             issues, self.running, now, timedelta(minutes=self.cfg.claim_ttl_minutes),
             held=frozenset({"design"}) if setup_open else frozenset(), repo=self.gh.repo)
+        if self.merges_held():
+            titles = {i.number: i.title for i in issues}
+            tasks = [t for t in tasks
+                     if t.kind != "test" or titles.get(t.issue) == readiness.VERIFY_TITLE]
         practices = self.practices_task(issues, now)
         return tasks + [practices] if practices else tasks
 
@@ -321,22 +351,28 @@ class Office:
                      "runs: %s", len(removed), ", ".join(removed))
 
     def bootstrap(self) -> None:
-        """Every target needs impeccable before design work. If the clone doesn't have it,
-        file a ready, p0 issue so an engineer adds it in a PR that is reviewed and tested
-        like any other change. The office never commits to the target itself."""
+        """Every target needs impeccable before design work, and a verify command before
+        anything merges. For each one the clone lacks, file a ready, p0 issue so an engineer
+        adds it in a PR that is reviewed and tested like any other change. The office never
+        commits to the target itself."""
         if not readiness.release_command(self.ws.clone):
             log.warning("no release command (`make release` or `npm run release`): merged "
                         "changes are never released")
-        if readiness.impeccable_installed(self.ws.clone):
-            return
-        if self.gh.find_issue_by_title(readiness.IMPECCABLE_TITLE):
+        if not readiness.impeccable_installed(self.ws.clone):
+            self.file_setup(readiness.IMPECCABLE_TITLE, IMPECCABLE_BODY,
+                            "impeccable isn't committed")
+        if self.merges_held():
+            self.file_setup(readiness.VERIFY_TITLE, VERIFY_BODY,
+                            "there's no verify command; merges wait for it")
+
+    def file_setup(self, title: str, body: str, why: str) -> None:
+        if self.gh.find_issue_by_title(title):
             return
         if self.dry_run:
-            log.info("would file %r (impeccable isn't committed)", readiness.IMPECCABLE_TITLE)
+            log.info("would file %r (%s)", title, why)
             return
-        n = self.gh.create_issue(readiness.IMPECCABLE_TITLE, IMPECCABLE_BODY,
-                                 [L.READY, "priority:p0"])
-        log.info("filed #%s: %s", n, readiness.IMPECCABLE_TITLE)
+        n = self.gh.create_issue(title, body, [L.READY, "priority:p0"])
+        log.info("filed #%s: %s (%s)", n, title, why)
 
     def start(self, task: Task) -> None:
         if task.kind in planner.HOUSEKEEPING:
@@ -396,6 +432,12 @@ class Office:
                                         planner.priority(i), i.number))
         lines = [f"- #{i.number} {i.title}" for i in waiting]
         summary = "\n".join(lines) or "- (none)"
+        held = [i for i in issues if i.status == L.TESTING and L.RELEASE not in i.labels
+                and i.title != readiness.VERIFY_TITLE] if self.merges_held() else []
+        if held:
+            summary += ("\n\nWaiting to be tested until the repo has a verify command (the "
+                        f"\"{readiness.VERIFY_TITLE}\" issue):\n"
+                        + "\n".join(f"- #{i.number} {i.title}" for i in held))
         if summary == self.last_summary:
             return
         self.last_summary = summary

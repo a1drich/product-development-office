@@ -45,7 +45,8 @@ Startup steps:
 4. Create any missing office labels on each target repo.
 5. Release any `status:in-progress` claims left over from a previous run (a fresh office has no agents running).
 6. If the [impeccable](https://github.com/pbakaus/impeccable) design skill isn't committed to the repo, file an "Add the impeccable design skill" issue labelled `status:ready` and `priority:p0`, unless one is already open. An engineer installs and commits it in a PR that is reviewed and tested like any other, and design work waits until the issue closes. The office never commits to the target itself.
-7. Hand control to the loop, which runs every repo together.
+7. If the repo has no verify command (`make verify` or `npm run verify`), file an "Add a verify command" issue the same way. Until a verify command exists, the office tests nothing but that issue: other PRs are still built and reviewed, then wait at `status:testing`, listed in the "Office status" issue. Once it lands, they're tested against it.
+8. Hand control to the loop, which runs every repo together.
 
 ## Stopping and resuming
 

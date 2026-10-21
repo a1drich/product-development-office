@@ -57,7 +57,7 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
 - **One office runs several repos on one subscription.** All repos belong to the same owner, so `limits` cap each role across every repo together, the most urgent task goes first whichever repo it's in, and machine-wide settings can't be overridden per repo. Each repo keeps its own GitHub state, clone, worktrees and settings.
 - **Code is written by one model and checked by another.** Claude writes the code; Codex reviews and tests it.
 - **Merging and releasing are treated differently.**
-  - The Tester merges a PR only after the target repo's full verification gate passes locally and the acceptance criteria are verified. CI must also pass if the repo has it.
+  - The Tester merges a PR only after the target repo's full verification gate passes locally and the acceptance criteria are verified. CI must also pass if the repo has it. A repo without a verify command gets an issue to add one, and nothing else is tested until it lands.
   - Deploying and releasing are always a human decision. A merge never triggers either. The office collects merged changes in one `office:release` issue, and releases only when a repo admin adds `release:approved`: it checks the default branch hasn't moved, runs verify, then the target's `make release`, and Codex checks the live site. It rolls back only on `rollback:approved`. Agents never release, and can't set either label.
 - **Blockers follow a fixed template.** Every blocker has the sections Decision needed, Context, Options, Recommendation and Blocks, and is labelled `office:blocker` plus `blocked:human`. Three failures in a row on one issue also file a blocker, and so do three send-backs in a row by review or testing.
 - **Startup has a fixed sequence:**
@@ -66,7 +66,8 @@ These come from `docs/WORKFLOW.md`, `docs/TESTING.md` and `docs/ARCHITECTURE.md`
   3. Clone the target repo.
   4. Create any missing labels.
   5. If the impeccable skill isn't committed, file the "Add the impeccable design skill" issue (`status:ready`, `priority:p0`). An engineer adds it in a reviewed PR, and design waits until that issue closes.
-  6. Start the loop.
+  6. If the repo has no verify command, file the "Add a verify command" issue (`status:ready`, `priority:p0`). Until a verify command exists, nothing but that issue is tested, so nothing merges unverified.
+  7. Start the loop.
 - **Stop condition:** the office idles and posts a summary of open blockers when no issue can be acted on.
 - **Engineers work in isolation.** Each one gets its own git worktree of the target repo.
 - **The office cleans up after agents.** Anything an agent leaves running in its worktree or on its leased ports is stopped, every database it created under its issue's `office_` prefix is dropped, and every container, network and volume in its issue's compose project or prefix is removed after the run, even a failed one. Only a container publishing a port outside the lease survives, until the next `office start`. The office never touches a database or container outside `office_`, and never stops Docker's own port forwarders.

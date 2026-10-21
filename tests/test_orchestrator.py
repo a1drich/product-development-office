@@ -128,9 +128,11 @@ class FakeWorkspace:
 
 @pytest.fixture
 def make_office(tmp_path, monkeypatch):
-    def make(issues, verdicts, impeccable=True):
+    def make(issues, verdicts, impeccable=True, verify=True):
         if impeccable:
             (tmp_path / ".claude" / "skills" / "impeccable").mkdir(parents=True, exist_ok=True)
+        if verify and not (tmp_path / "Makefile").exists():
+            (tmp_path / "Makefile").write_text("verify:\n\techo\n")
         gh = FakeGitHub(issues)
         office = orchestrator.Office(Config(), gh, FakeWorkspace(tmp_path))
         # No real port probing or lsof in these tests; tests/test_ports.py covers them.
@@ -891,3 +893,32 @@ def test_the_third_send_back_in_a_row_asks_a_human(make_office):
         assert blocked == (n == 2)
     blocker = next(i for i in gh.issues.values() if L.BLOCKER in i.labels)
     assert "keeps coming back" in blocker.title
+
+
+# --- the verify-command bootstrap ---------------------------------------------------------
+
+def test_a_repo_without_a_verify_command_gets_a_setup_issue_once(make_office):
+    office, gh = make_office([Issue(1, "x", "", {L.TRIAGE})], [], verify=False)
+    office.bootstrap()
+    office.bootstrap()
+    filed = [i for i in gh.issues.values() if i.title == readiness.VERIFY_TITLE]
+    assert len(filed) == 1 and filed[0].labels == {L.READY, "priority:p0"}
+
+
+def test_nothing_but_the_verify_issue_is_tested_until_the_repo_has_one(make_office, tmp_path,
+                                                                      monkeypatch):
+    office, gh = make_office([Issue(1, "Contact form", "", {L.TESTING}),
+                              Issue(2, readiness.VERIFY_TITLE, "", {L.TESTING}),
+                              Issue(3, "Footer", "", {L.READY})], [], verify=False)
+    monkeypatch.setattr(office, "practices_task", lambda *a: None)
+    now = datetime.now(UTC)
+    kinds = {(t.kind, t.issue) for t in office.candidates(gh.open_issues(), now)}
+    assert kinds == {("test", 2), ("implement", 3)}  # engineers keep working
+    office.post_summary(gh.open_issues())
+    status = next(i for i in gh.issues.values() if L.STATUS_ISSUE in i.labels)
+    assert "until the repo has a verify command" in status.body and "#1 Contact form" in status.body
+
+    (tmp_path / "Makefile").write_text("verify:\n\techo\n")  # the verify PR merged
+    kinds = {(t.kind, t.issue) for t in office.candidates(gh.open_issues(), now)}
+    assert ("test", 1) in kinds
+    assert office.verify == "make verify"

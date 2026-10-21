@@ -15,6 +15,7 @@ FAIL, WARN, PASS = "fail", "warn", "pass"
 # `office start` files this issue when impeccable is missing (see Office.bootstrap), and
 # `office check --file-issues` uses the same title, so the gap is never filed twice.
 IMPECCABLE_TITLE = "Add the impeccable design skill"
+VERIFY_TITLE = "Add a verify command"
 IMPECCABLE_DIRS = (".claude/skills/impeccable", ".agents/skills/impeccable")
 
 
@@ -110,7 +111,9 @@ def check_files(root: Path) -> list[Finding]:
         out.append(Finding(
             "verify", FAIL, "no single verify command",
             "Add `make verify` (or `npm run verify`) that runs lint, tests, typecheck and frontend "
-            "lint and exits non-zero on any failure. It is the definition of done.",
+            "lint and exits non-zero on any failure. It is the definition of done. Until it "
+            "exists, the office tests and merges nothing but the issue that adds it.",
+            title=VERIFY_TITLE,
         ))
 
     release = release_command(root)
