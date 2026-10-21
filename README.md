@@ -40,7 +40,7 @@ Everything the office knows about a particular tool lives in that tool's [stack 
 - **Backend:** [Django](docs/stack/DJANGO.md) + Django REST Framework, with uv and ruff
 - **Frontends:** [Next.js](docs/stack/NEXTJS.md) or [Nuxt](docs/stack/NUXT.md), in TypeScript, or [Vite](docs/stack/VITE.md) single-page apps, styled with [Tailwind CSS](docs/stack/TAILWIND.md)
 - **Data:** [Postgres](docs/stack/POSTGRES.md) (and Redis where needed) via Docker Compose
-- **Deployment:** Docker containers on [Hetzner, behind Traefik](docs/stack/HETZNER-TRAEFIK.md), or static sites and frontends on [Vercel](docs/stack/VERCEL.md)
+- **Deployment:** Docker containers on [Hetzner, behind Traefik](docs/stack/HETZNER-TRAEFIK.md), several apps to a server with [lobby](https://github.com/a1drich/lobby), or static sites and frontends on [Vercel](docs/stack/VERCEL.md)
 
 The office still works on a repo that matches no guide, relying on the repo's own `AGENTS.md`.
 

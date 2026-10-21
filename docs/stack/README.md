@@ -26,7 +26,7 @@ api/                 Django + DRF          → api.example.com
 app/                 main web app          → app.example.com
 www/                 landing pages         → www.example.com
 docker-compose.yml   local Postgres + Redis
-deploy/              production compose, Traefik, deploy scripts
+deploy/              production compose and deploy scripts (Traefik comes from lobby)
 docs/                MkDocs site: product and technical docs
 docs/manual/         user manual and feature catalog, with screenshots
 mkdocs.yml           the docs site
