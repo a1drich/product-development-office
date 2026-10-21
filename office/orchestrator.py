@@ -784,10 +784,19 @@ class Office:
                         "The repo no longer has a release command, so nothing was released.")
             return
         if planner.release_head(issue) != head:
+            # A merge the office didn't make (a PR merged by hand) moves the branch without
+            # updating the list, so the list moves to the new head here, or no approval
+            # would ever match it again.
+            with self.release_lock:
+                self.gh.edit_body(issue.number, release_body(
+                    release_changes(issue.body), head,
+                    readiness.verify_command(self.ws.clone) or "nothing (no verify command)",
+                    release, readiness.repo_command(self.ws.clone, "rollback")))
             self.refuse(issue, L.RELEASE_APPROVED,
                         f"The default branch moved to `{head[:7]}` after this list was written, "
-                        "so it may not be what you approved. Nothing was released; check the "
-                        "list again.")
+                        "so it may not be what you approved. Nothing was released. The list "
+                        f"now covers `{head[:7]}`, including any change merged outside the "
+                        "office; check it before approving.")
             return
         verify = readiness.verify_command(self.ws.clone)
         checks = [verify.split()] if verify else []

@@ -780,6 +780,19 @@ def test_a_release_is_refused_when_main_moved_or_an_admin_did_not_approve(releas
     assert expected in issue.comments[-1].body
 
 
+def test_a_release_refused_because_main_moved_goes_out_on_the_next_approval(releasing):
+    office, gh = releasing([release_issue(9, L.BLOCKED, L.RELEASE_APPROVED)])
+    changes = orchestrator.release_changes(gh.issues[9].body)
+    office.ws.head_sha = "def5678"  # a PR merged by hand, outside the office
+    office.execute(Task("deploy", 9))
+    assert office.ran == []
+    assert "<!-- office:head def5678 -->" in gh.issues[9].body
+    assert orchestrator.release_changes(gh.issues[9].body) == changes
+    gh.edit_labels(9, add=[L.RELEASE_APPROVED])
+    office.execute(Task("deploy", 9))
+    assert office.ran == ["make verify", "make release"]
+
+
 def test_a_failing_verify_releases_nothing(releasing):
     office, gh = releasing([release_issue(9, L.BLOCKED, L.RELEASE_APPROVED)], failing=["verify"])
     office.execute(Task("deploy", 9))
